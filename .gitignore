@@ -1,41 +1,26 @@
-# Prerequisites
-*.d
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
 
-# Compiled Object files
-*.slo
-*.lo
-*.o
-*.obj
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+*.egg
 
-# Precompiled Headers
-*.gch
-*.pch
+# Virtual environments
+venv/
+env/
+.env/
+.env.* 
+.env
 
-# Linker files
-*.ilk
+# IDEs
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
 
-# Debugger Files
-*.pdb
-
-# Compiled Dynamic libraries
-*.so
-*.dylib
-*.dll
-
-# Fortran module files
-*.mod
-*.smod
-
-# Compiled Static libraries
-*.lai
-*.la
-*.a
-*.lib
-
-# Executables
-*.exe
-*.out
-*.app
-
-# debug information files
-*.dwo
+# Logs
+*.log
