@@ -64,7 +64,7 @@ class MainWindow(QWidget):
         self.solo_label_title = QLabel("Solo/Duo")
         self.solo_label_title.setAlignment(Qt.AlignCenter)
         self.solo_emblem = QLabel()
-        self.solo_emblem.setScaledContents(True)
+        self.solo_emblem.setAlignment(Qt.AlignCenter)
         self.solo_text = QLabel("")
         self.solo_text.setAlignment(Qt.AlignCenter)
         self.solo_text.setWordWrap(True)
@@ -79,7 +79,7 @@ class MainWindow(QWidget):
         self.flex_label_title = QLabel("Flex")
         self.flex_label_title.setAlignment(Qt.AlignCenter)
         self.flex_emblem = QLabel()
-        self.flex_emblem.setScaledContents(True)
+        self.flex_emblem.setAlignment(Qt.AlignCenter)
         self.flex_text = QLabel("")
         self.flex_text.setAlignment(Qt.AlignCenter)
         self.flex_text.setWordWrap(True)
@@ -107,6 +107,12 @@ class MainWindow(QWidget):
         self.base_font.setPointSize(12)
         self.solo_text.setFont(self.base_font)
         self.flex_text.setFont(self.base_font)
+        self.solo_label_title.setFont(self.base_font)
+        self.flex_label_title.setFont(self.base_font)
+
+        # Original pixmaps (keep them for scaling)
+        self.solo_pixmap = None
+        self.flex_pixmap = None
 
     # ----------------------------------------------------
     # Search button logic
@@ -146,8 +152,9 @@ class MainWindow(QWidget):
             self.solo_container.show()
             tier = solo["tier"]
             emblem_path = get_emblem_path(tier)
-            pix = QPixmap(emblem_path)
-            self.solo_emblem.setPixmap(pix)
+            self.solo_pixmap = QPixmap(emblem_path)
+            self.solo_emblem.setPixmap(self.solo_pixmap)
+
             self.solo_text.setText(
                 f"{tier.title()} {solo['rank']} - {solo['leaguePoints']} LP\n"
                 f"Wins: {solo['wins']}  Losses: {solo['losses']}"
@@ -163,19 +170,24 @@ class MainWindow(QWidget):
             self.flex_container.show()
             tier = flex["tier"]
             emblem_path = get_emblem_path(tier)
-            pix = QPixmap(emblem_path)
-            self.flex_emblem.setPixmap(pix)
+            self.flex_pixmap = QPixmap(emblem_path)
+            self.flex_emblem.setPixmap(self.flex_pixmap)
+
             self.flex_text.setText(
                 f"{tier.title()} {flex['rank']} - {flex['leaguePoints']} LP\n"
                 f"Wins: {flex['wins']}  Losses: {flex['losses']}"
             )
-            self.flex_container.hide()  # hide until toggled
+
+            self.flex_container.hide()
             self.toggle_btn.show()
         else:
             self.flex_container.hide()
             self.flex_emblem.clear()
             self.flex_text.setText("Flex Rank: Unranked")
             self.toggle_btn.hide()
+
+        # Trigger a resize to scale emblems
+        self.resizeEvent(None)
 
     # ----------------------------------------------------
     # Toggle flex visibility
@@ -190,13 +202,40 @@ class MainWindow(QWidget):
             self.toggle_btn.setText("Hide Flex Ranking")
             self.flex_visible = True
 
+        # Trigger resize to scale icons
+        self.resizeEvent(None)
+
     # ----------------------------------------------------
-    # Dynamically resize font with window
+    # Dynamically resize font and emblems with window
     # ----------------------------------------------------
     def resizeEvent(self, event):
-        new_size = max(12, self.width() // 35)
+        # Adjust font size
+        font_size = max(12, self.width() // 35)
         font = QFont(self.base_font)
-        font.setPointSize(new_size)
+        font.setPointSize(font_size)
         self.solo_text.setFont(font)
         self.flex_text.setFont(font)
+        self.solo_label_title.setFont(font)
+        self.flex_label_title.setFont(font)
+
+        # Scale SOLO emblem
+        if self.solo_pixmap:
+            max_width = self.solo_emblem.width()
+            max_height = self.solo_emblem.height()
+            scaled = self.solo_pixmap.scaled(
+                max_width, max_height, 
+                Qt.KeepAspectRatio, Qt.SmoothTransformation
+            )
+            self.solo_emblem.setPixmap(scaled)
+
+        # Scale FLEX emblem
+        if self.flex_pixmap:
+            max_width = self.flex_emblem.width()
+            max_height = self.flex_emblem.height()
+            scaled = self.flex_pixmap.scaled(
+                max_width, max_height, 
+                Qt.KeepAspectRatio, Qt.SmoothTransformation
+            )
+            self.flex_emblem.setPixmap(scaled)
+
         super().resizeEvent(event)
