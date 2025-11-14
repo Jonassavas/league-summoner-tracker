@@ -3,6 +3,10 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+league_data.json
+*.pyc
+
+
 # Distribution / packaging
 build/
 dist/
