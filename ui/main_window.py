@@ -1,9 +1,9 @@
 # ui/main_window.py
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLineEdit,
-    QPushButton, QLabel, QFormLayout, QSizePolicy
+    QPushButton, QLabel, QFormLayout
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QEvent
 from PySide6.QtGui import QPixmap, QFont
 from api.riot_api import RiotAPI
 from utils.assets import get_emblem_path
@@ -13,18 +13,24 @@ class MainWindow(QWidget):
     def __init__(self):
         super().__init__()
 
+        # API
         self.api = RiotAPI()
         self.rank_data = None
         self.flex_visible = False
 
+        # Window settings
         self.setWindowTitle("League Summoner Tracker")
         self.setMinimumWidth(500)
         self.setMinimumHeight(400)
 
+        # Save initial geometry for fullscreen restore
+        self.normal_geometry_data = self.saveGeometry()
+        self.is_fullscreen = False
+
         main_layout = QVBoxLayout()
 
         # -------------------------
-        # Form layout for Name/Tag
+        # Form layout for Name/Tag input
         # -------------------------
         self.name_input = QLineEdit()
         self.tag_input = QLineEdit()
@@ -37,9 +43,12 @@ class MainWindow(QWidget):
         main_layout.addLayout(form_layout)
 
         # -------------------------
-        # Buttons layout
+        # Horizontal content layout
         # -------------------------
-        buttons_layout = QVBoxLayout()
+        content_layout = QHBoxLayout()
+
+        # Left column: Buttons + Name/Tag
+        self.left_column = QVBoxLayout()
         self.search_btn = QPushButton("Search")
         self.search_btn.setFixedHeight(40)
         self.search_btn.clicked.connect(self.on_search)
@@ -47,15 +56,20 @@ class MainWindow(QWidget):
         self.toggle_btn = QPushButton("Show Flex Ranking")
         self.toggle_btn.setFixedHeight(40)
         self.toggle_btn.clicked.connect(self.toggle_flex)
-        self.toggle_btn.hide()  # hide until flex exists
+        self.toggle_btn.hide()
 
-        buttons_layout.addWidget(self.search_btn)
-        buttons_layout.addWidget(self.toggle_btn)
-        buttons_layout.addStretch()
+        # Summoner label below buttons
+        self.summoner_label = QLabel("")
+        self.summoner_label.setAlignment(Qt.AlignCenter)
+        self.summoner_label.setWordWrap(True)
 
-        # -------------------------
-        # Rank layout (emblems + text)
-        # -------------------------
+        self.left_column.addWidget(self.search_btn)
+        self.left_column.addWidget(self.toggle_btn)
+        self.left_column.addStretch()
+        self.left_column.addWidget(self.summoner_label)
+        content_layout.addLayout(self.left_column, 1)  # ~20% width
+
+        # Right column: Ranked info
         self.rank_layout = QHBoxLayout()
 
         # SOLO container
@@ -71,7 +85,7 @@ class MainWindow(QWidget):
         self.solo_vbox.addWidget(self.solo_label_title)
         self.solo_vbox.addWidget(self.solo_emblem)
         self.solo_vbox.addWidget(self.solo_text)
-        self.solo_container.hide()  # hidden initially
+        self.solo_container.hide()
 
         # FLEX container
         self.flex_container = QWidget()
@@ -86,49 +100,50 @@ class MainWindow(QWidget):
         self.flex_vbox.addWidget(self.flex_label_title)
         self.flex_vbox.addWidget(self.flex_emblem)
         self.flex_vbox.addWidget(self.flex_text)
-        self.flex_container.hide()  # hidden initially
+        self.flex_container.hide()
 
         # Add SOLO/FLEX to rank layout
         self.rank_layout.addWidget(self.solo_container, 1)
         self.rank_layout.addWidget(self.flex_container, 1)
+        content_layout.addLayout(self.rank_layout, 4)  # ~80% width
 
-        # -------------------------
-        # Combine buttons + rank
-        # -------------------------
-        content_layout = QHBoxLayout()
-        content_layout.addLayout(buttons_layout, 1)  # 20% width
-        content_layout.addLayout(self.rank_layout, 4)  # 80% width
         main_layout.addLayout(content_layout)
-
         self.setLayout(main_layout)
 
-        # Base font for dynamic resizing
+        # Base font for scaling
         self.base_font = QFont()
         self.base_font.setPointSize(12)
         self.solo_text.setFont(self.base_font)
         self.flex_text.setFont(self.base_font)
         self.solo_label_title.setFont(self.base_font)
         self.flex_label_title.setFont(self.base_font)
+        self.summoner_label.setFont(self.base_font)
 
-        # Original pixmaps (keep them for scaling)
+        # Store original pixmaps for scaling
         self.solo_pixmap = None
         self.flex_pixmap = None
 
-    # ----------------------------------------------------
+    # -------------------------
     # Search button logic
-    # ----------------------------------------------------
+    # -------------------------
     def on_search(self):
         name = self.name_input.text().strip()
         tag = self.tag_input.text().strip()
         self.flex_visible = False
-        self.flex_container.hide()
         self.solo_container.hide()
+        self.flex_container.hide()
         self.toggle_btn.hide()
 
         if not name or not tag:
             self.solo_container.show()
             self.solo_text.setText("Please enter both Name and Tag line")
+            self.summoner_label.setText("")
+            self.solo_emblem.clear()
+            self.flex_emblem.clear()
             return
+
+        # Display Name/Tagline below buttons
+        self.summoner_label.setText(f"{name}\n#{tag}")
 
         # Step 1: PUUID
         status, puuid_or_error = self.api.get_puuid(name, tag)
@@ -146,7 +161,7 @@ class MainWindow(QWidget):
             return
         self.rank_data = ranked
 
-        # SOLO
+        # SOLO rank
         solo = ranked.get("solo")
         if solo:
             self.solo_container.show()
@@ -162,9 +177,9 @@ class MainWindow(QWidget):
         else:
             self.solo_container.show()
             self.solo_emblem.clear()
-            self.solo_text.setText("Solo Rank: Unranked")
+            self.solo_text.setText("Solo/Duo\nUnranked")
 
-        # FLEX
+        # FLEX rank
         flex = ranked.get("flex")
         if flex:
             self.flex_container.show()
@@ -177,21 +192,19 @@ class MainWindow(QWidget):
                 f"{tier.title()} {flex['rank']} - {flex['leaguePoints']} LP\n"
                 f"Wins: {flex['wins']}  Losses: {flex['losses']}"
             )
-
-            self.flex_container.hide()
+            self.flex_container.hide()  # hidden until toggled
             self.toggle_btn.show()
         else:
             self.flex_container.hide()
             self.flex_emblem.clear()
-            self.flex_text.setText("Flex Rank: Unranked")
+            self.flex_text.setText("Flex\nUnranked")
             self.toggle_btn.hide()
 
-        # Trigger a resize to scale emblems
         self.resizeEvent(None)
 
-    # ----------------------------------------------------
+    # -------------------------
     # Toggle flex visibility
-    # ----------------------------------------------------
+    # -------------------------
     def toggle_flex(self):
         if self.flex_visible:
             self.flex_container.hide()
@@ -202,14 +215,31 @@ class MainWindow(QWidget):
             self.toggle_btn.setText("Hide Flex Ranking")
             self.flex_visible = True
 
-        # Trigger resize to scale icons
         self.resizeEvent(None)
 
-    # ----------------------------------------------------
-    # Dynamically resize font and emblems with window
-    # ----------------------------------------------------
+    # -------------------------
+    # Handle fullscreen restore
+    # -------------------------
+    def changeEvent(self, event):
+        if event.type() == QEvent.WindowStateChange:
+            if self.windowState() & Qt.WindowFullScreen:
+                self.is_fullscreen = True
+            else:
+                if self.is_fullscreen:
+                    # Restore saved geometry safely
+                    self.restoreGeometry(self.normal_geometry_data)
+                    self.is_fullscreen = False
+        super().changeEvent(event)
+
+    # -------------------------
+    # Dynamically resize font and emblems
+    # -------------------------
     def resizeEvent(self, event):
-        # Adjust font size
+        # Save normal geometry if not fullscreen
+        if not self.isFullScreen():
+            self.normal_geometry_data = self.saveGeometry()
+
+        # Adjust font size based on current width
         font_size = max(12, self.width() // 35)
         font = QFont(self.base_font)
         font.setPointSize(font_size)
@@ -217,24 +247,25 @@ class MainWindow(QWidget):
         self.flex_text.setFont(font)
         self.solo_label_title.setFont(font)
         self.flex_label_title.setFont(font)
+        self.summoner_label.setFont(font)
 
         # Scale SOLO emblem
         if self.solo_pixmap:
-            max_width = self.solo_emblem.width()
-            max_height = self.solo_emblem.height()
             scaled = self.solo_pixmap.scaled(
-                max_width, max_height, 
-                Qt.KeepAspectRatio, Qt.SmoothTransformation
+                self.solo_emblem.width(),
+                self.solo_emblem.height(),
+                Qt.KeepAspectRatio,
+                Qt.SmoothTransformation
             )
             self.solo_emblem.setPixmap(scaled)
 
         # Scale FLEX emblem
         if self.flex_pixmap:
-            max_width = self.flex_emblem.width()
-            max_height = self.flex_emblem.height()
             scaled = self.flex_pixmap.scaled(
-                max_width, max_height, 
-                Qt.KeepAspectRatio, Qt.SmoothTransformation
+                self.flex_emblem.width(),
+                self.flex_emblem.height(),
+                Qt.KeepAspectRatio,
+                Qt.SmoothTransformation
             )
             self.flex_emblem.setPixmap(scaled)
 
