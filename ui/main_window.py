@@ -1,7 +1,7 @@
 # ui/main_window.py
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLineEdit,
-    QPushButton, QLabel, QFormLayout
+    QPushButton, QLabel, QFormLayout, QSizePolicy
 )
 from PySide6.QtCore import Qt, QEvent
 from PySide6.QtGui import QPixmap, QFont
@@ -23,7 +23,7 @@ class MainWindow(QWidget):
         self.setMinimumWidth(500)
         self.setMinimumHeight(400)
 
-        # Save initial geometry for fullscreen restore
+        # Save initial geometry for restore
         self.normal_geometry_data = self.saveGeometry()
         self.is_fullscreen = False
 
@@ -79,11 +79,14 @@ class MainWindow(QWidget):
         self.solo_label_title.setAlignment(Qt.AlignCenter)
         self.solo_emblem = QLabel()
         self.solo_emblem.setAlignment(Qt.AlignCenter)
+        self.solo_emblem.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.solo_emblem.setMinimumSize(1, 1)
+        self.solo_emblem.installEventFilter(self)  # <- event filter for resizing
         self.solo_text = QLabel("")
         self.solo_text.setAlignment(Qt.AlignCenter)
         self.solo_text.setWordWrap(True)
         self.solo_vbox.addWidget(self.solo_label_title)
-        self.solo_vbox.addWidget(self.solo_emblem)
+        self.solo_vbox.addWidget(self.solo_emblem, 1)
         self.solo_vbox.addWidget(self.solo_text)
         self.solo_container.hide()
 
@@ -94,11 +97,14 @@ class MainWindow(QWidget):
         self.flex_label_title.setAlignment(Qt.AlignCenter)
         self.flex_emblem = QLabel()
         self.flex_emblem.setAlignment(Qt.AlignCenter)
+        self.flex_emblem.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.flex_emblem.setMinimumSize(1, 1)
+        self.flex_emblem.installEventFilter(self)
         self.flex_text = QLabel("")
         self.flex_text.setAlignment(Qt.AlignCenter)
         self.flex_text.setWordWrap(True)
         self.flex_vbox.addWidget(self.flex_label_title)
-        self.flex_vbox.addWidget(self.flex_emblem)
+        self.flex_vbox.addWidget(self.flex_emblem, 1)
         self.flex_vbox.addWidget(self.flex_text)
         self.flex_container.hide()
 
@@ -119,9 +125,9 @@ class MainWindow(QWidget):
         self.flex_label_title.setFont(self.base_font)
         self.summoner_label.setFont(self.base_font)
 
-        # Store original pixmaps for scaling
-        self.solo_pixmap = None
-        self.flex_pixmap = None
+        # Original pixmaps for scaling
+        self.solo_original_pixmap = None
+        self.flex_original_pixmap = None
 
     # -------------------------
     # Search button logic
@@ -140,9 +146,10 @@ class MainWindow(QWidget):
             self.summoner_label.setText("")
             self.solo_emblem.clear()
             self.flex_emblem.clear()
+            self.solo_original_pixmap = None
+            self.flex_original_pixmap = None
             return
 
-        # Display Name/Tagline below buttons
         self.summoner_label.setText(f"{name}\n#{tag}")
 
         # Step 1: PUUID
@@ -167,8 +174,8 @@ class MainWindow(QWidget):
             self.solo_container.show()
             tier = solo["tier"]
             emblem_path = get_emblem_path(tier)
-            self.solo_pixmap = QPixmap(emblem_path)
-            self.solo_emblem.setPixmap(self.solo_pixmap)
+            self.solo_original_pixmap = QPixmap(emblem_path)
+            self.solo_emblem.setPixmap(self.solo_original_pixmap)
 
             self.solo_text.setText(
                 f"{tier.title()} {solo['rank']} - {solo['leaguePoints']} LP\n"
@@ -177,6 +184,7 @@ class MainWindow(QWidget):
         else:
             self.solo_container.show()
             self.solo_emblem.clear()
+            self.solo_original_pixmap = None
             self.solo_text.setText("Solo/Duo\nUnranked")
 
         # FLEX rank
@@ -185,22 +193,21 @@ class MainWindow(QWidget):
             self.flex_container.show()
             tier = flex["tier"]
             emblem_path = get_emblem_path(tier)
-            self.flex_pixmap = QPixmap(emblem_path)
-            self.flex_emblem.setPixmap(self.flex_pixmap)
+            self.flex_original_pixmap = QPixmap(emblem_path)
+            self.flex_emblem.setPixmap(self.flex_original_pixmap)
 
             self.flex_text.setText(
                 f"{tier.title()} {flex['rank']} - {flex['leaguePoints']} LP\n"
                 f"Wins: {flex['wins']}  Losses: {flex['losses']}"
             )
-            self.flex_container.hide()  # hidden until toggled
+            self.flex_container.hide()
             self.toggle_btn.show()
         else:
             self.flex_container.hide()
             self.flex_emblem.clear()
+            self.flex_original_pixmap = None
             self.flex_text.setText("Flex\nUnranked")
             self.toggle_btn.hide()
-
-        self.resizeEvent(None)
 
     # -------------------------
     # Toggle flex visibility
@@ -215,10 +222,8 @@ class MainWindow(QWidget):
             self.toggle_btn.setText("Hide Flex Ranking")
             self.flex_visible = True
 
-        self.resizeEvent(None)
-
     # -------------------------
-    # Handle fullscreen restore
+    # Fullscreen / restore
     # -------------------------
     def changeEvent(self, event):
         if event.type() == QEvent.WindowStateChange:
@@ -226,20 +231,32 @@ class MainWindow(QWidget):
                 self.is_fullscreen = True
             else:
                 if self.is_fullscreen:
-                    # Restore saved geometry safely
                     self.restoreGeometry(self.normal_geometry_data)
                     self.is_fullscreen = False
         super().changeEvent(event)
 
     # -------------------------
-    # Dynamically resize font and emblems
+    # Resize event (for fonts)
     # -------------------------
     def resizeEvent(self, event):
-        # Save normal geometry if not fullscreen
-        if not self.isFullScreen():
+        if not self.isFullScreen() and isinstance(event, QEvent):
             self.normal_geometry_data = self.saveGeometry()
+        self.scale_fonts()
+        super().resizeEvent(event)
 
-        # Adjust font size based on current width
+    # -------------------------
+    # Event filter for QLabel resizing
+    # -------------------------
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.Resize:
+            if obj == self.solo_emblem or obj == self.flex_emblem:
+                self.scale_emblems()
+        return super().eventFilter(obj, event)
+
+    # -------------------------
+    # Scale fonts dynamically
+    # -------------------------
+    def scale_fonts(self):
         font_size = max(12, self.width() // 35)
         font = QFont(self.base_font)
         font.setPointSize(font_size)
@@ -249,9 +266,12 @@ class MainWindow(QWidget):
         self.flex_label_title.setFont(font)
         self.summoner_label.setFont(font)
 
-        # Scale SOLO emblem
-        if self.solo_pixmap:
-            scaled = self.solo_pixmap.scaled(
+    # -------------------------
+    # Scale emblems based on QLabel size
+    # -------------------------
+    def scale_emblems(self):
+        if self.solo_original_pixmap:
+            scaled = self.solo_original_pixmap.scaled(
                 self.solo_emblem.width(),
                 self.solo_emblem.height(),
                 Qt.KeepAspectRatio,
@@ -259,14 +279,11 @@ class MainWindow(QWidget):
             )
             self.solo_emblem.setPixmap(scaled)
 
-        # Scale FLEX emblem
-        if self.flex_pixmap:
-            scaled = self.flex_pixmap.scaled(
+        if self.flex_original_pixmap:
+            scaled = self.flex_original_pixmap.scaled(
                 self.flex_emblem.width(),
                 self.flex_emblem.height(),
                 Qt.KeepAspectRatio,
                 Qt.SmoothTransformation
             )
             self.flex_emblem.setPixmap(scaled)
-
-        super().resizeEvent(event)
