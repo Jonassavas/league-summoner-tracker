@@ -1,12 +1,14 @@
 # ui/main_window.py
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLineEdit,
-    QPushButton, QLabel, QFormLayout, QSizePolicy
+    QPushButton, QLabel, QFormLayout, QSizePolicy,
+    QStackedLayout
 )
 from PySide6.QtCore import Qt, QEvent, QTimer, QRect, QSize
 from PySide6.QtGui import QPixmap, QFont
 from api.riot_api import RiotAPI
 from utils.assets import get_emblem_path
+from api.league_client import LeagueClient
 
 
 class MainWindow(QWidget):
@@ -25,15 +27,23 @@ class MainWindow(QWidget):
 
         # Save initial geometry for restore
         self.normal_geometry_data = self.saveGeometry()
-        self.normal_geometry_rect = self.geometry()  # QRect of last non-maximized geometry
+        self.normal_geometry_rect = self.geometry()
         self.was_maximized = False
         self.is_fullscreen = False
 
-        main_layout = QVBoxLayout()
+        # --------------------------------------------------
+        # STACKED LAYOUT FOR MULTIPLE SCREENS
+        # --------------------------------------------------
+        self.stack = QStackedLayout()
+        self.setLayout(self.stack)
 
-        # -------------------------
-        # Form layout for Name/Tag input
-        # -------------------------
+        # --------------------------------------------------
+        # MAIN SCREEN
+        # --------------------------------------------------
+        self.main_screen = QWidget()
+        main_layout = QVBoxLayout(self.main_screen)
+
+        # Form layout Name/Tag
         self.name_input = QLineEdit()
         self.tag_input = QLineEdit()
         self.name_input.setPlaceholderText("e.g. Jone")
@@ -44,13 +54,11 @@ class MainWindow(QWidget):
         form_layout.addRow("Tag Line #:", self.tag_input)
         main_layout.addLayout(form_layout)
 
-        # -------------------------
-        # Horizontal content layout
-        # -------------------------
+        # Horizontal content
         content_layout = QHBoxLayout()
-
-        # Left column: Buttons + Name/Tag
         self.left_column = QVBoxLayout()
+
+        # Buttons
         self.search_btn = QPushButton("Search")
         self.search_btn.setFixedHeight(40)
         self.search_btn.clicked.connect(self.on_search)
@@ -60,18 +68,25 @@ class MainWindow(QWidget):
         self.toggle_btn.clicked.connect(self.toggle_flex)
         self.toggle_btn.hide()
 
-        # Summoner label below buttons
+        # Champ select button
+        self.champ_btn = QPushButton("Show Champ-Select")
+        self.champ_btn.setFixedHeight(40)
+        self.champ_btn.clicked.connect(self.on_show_champ)
+
+        # Summoner label
         self.summoner_label = QLabel("")
         self.summoner_label.setAlignment(Qt.AlignCenter)
         self.summoner_label.setWordWrap(True)
 
+        # Add to left column
         self.left_column.addWidget(self.search_btn)
         self.left_column.addWidget(self.toggle_btn)
+        self.left_column.addWidget(self.champ_btn)
         self.left_column.addStretch()
         self.left_column.addWidget(self.summoner_label)
-        content_layout.addLayout(self.left_column, 1)  # ~20% width
+        content_layout.addLayout(self.left_column, 1)
 
-        # Right column: Ranked info
+        # Right column (rank info)
         self.rank_layout = QHBoxLayout()
 
         # SOLO container
@@ -81,7 +96,6 @@ class MainWindow(QWidget):
         self.solo_label_title.setAlignment(Qt.AlignCenter)
         self.solo_emblem = QLabel()
         self.solo_emblem.setAlignment(Qt.AlignCenter)
-        # Keep expanding horizontally but ignore vertical hint (avoids forcing height)
         self.solo_emblem.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Ignored)
         self.solo_emblem.setMinimumSize(1, 1)
         self.solo_emblem.installEventFilter(self)
@@ -111,15 +125,14 @@ class MainWindow(QWidget):
         self.flex_vbox.addWidget(self.flex_text)
         self.flex_container.hide()
 
-        # Add SOLO/FLEX to rank layout
+        # Add rank widgets
         self.rank_layout.addWidget(self.solo_container, 1)
         self.rank_layout.addWidget(self.flex_container, 1)
-        content_layout.addLayout(self.rank_layout, 4)  # ~80% width
+        content_layout.addLayout(self.rank_layout, 4)
 
         main_layout.addLayout(content_layout)
-        self.setLayout(main_layout)
 
-        # Base font for scaling
+        # Scaling
         self.base_font = QFont()
         self.base_font.setPointSize(12)
         self.solo_text.setFont(self.base_font)
@@ -128,13 +141,38 @@ class MainWindow(QWidget):
         self.flex_label_title.setFont(self.base_font)
         self.summoner_label.setFont(self.base_font)
 
-        # Original pixmaps for scaling
+        # Pixmaps
         self.solo_original_pixmap = None
         self.flex_original_pixmap = None
 
-    # -------------------------
+        # Register main screen in stack
+        self.stack.addWidget(self.main_screen)
+
+        # --------------------------------------------------
+        # CHAMP SELECT SCREEN
+        # --------------------------------------------------
+        self.champ_screen = QWidget()
+        champ_layout = QVBoxLayout(self.champ_screen)
+
+        self.back_btn = QPushButton("← Back")
+        self.back_btn.clicked.connect(self.go_back)
+        champ_layout.addWidget(self.back_btn)
+
+        self.champ_select_label = QLabel("Champion select will appear here.")
+        self.champ_select_label.setAlignment(Qt.AlignCenter)
+        self.champ_select_label.setWordWrap(True)
+        champ_layout.addWidget(self.champ_select_label)
+
+        self.stack.addWidget(self.champ_screen)
+
+        # Timer for live champ-select updates
+        self.champ_timer = QTimer()
+        self.champ_timer.setInterval(1000)
+        self.champ_timer.timeout.connect(self.update_champ_select)
+
+    # --------------------------------------------------
     # Search button logic
-    # -------------------------
+    # --------------------------------------------------
     def on_search(self):
         name = self.name_input.text().strip()
         tag = self.tag_input.text().strip()
@@ -155,7 +193,6 @@ class MainWindow(QWidget):
 
         self.summoner_label.setText(f"{name}\n#{tag}")
 
-        # Step 1: PUUID
         status, puuid_or_error = self.api.get_puuid(name, tag)
         if status != 200:
             self.solo_container.show()
@@ -163,7 +200,6 @@ class MainWindow(QWidget):
             return
         puuid = puuid_or_error
 
-        # Step 2: Ranked data
         status, ranked = self.api.get_ranked_data(puuid)
         if status != 200:
             self.solo_container.show()
@@ -171,18 +207,15 @@ class MainWindow(QWidget):
             return
         self.rank_data = ranked
 
-        # SOLO rank
+        # Solo rank
         solo = ranked.get("solo")
         if solo:
             self.solo_container.show()
             tier = solo["tier"]
             emblem_path = get_emblem_path(tier)
             self.solo_original_pixmap = QPixmap(emblem_path)
-            # Clear any previous pixmap before scaling to avoid label forcing size
             self.solo_emblem.clear()
-            # Scale after layout stabilizes
             QTimer.singleShot(0, self.scale_emblems)
-
             self.solo_text.setText(
                 f"{tier.title()} {solo['rank']} - {solo['leaguePoints']} LP\n"
                 f"Wins: {solo['wins']}  Losses: {solo['losses']}"
@@ -193,7 +226,7 @@ class MainWindow(QWidget):
             self.solo_original_pixmap = None
             self.solo_text.setText("Solo/Duo\nUnranked")
 
-        # FLEX rank
+        # Flex rank
         flex = ranked.get("flex")
         if flex:
             self.flex_container.show()
@@ -202,7 +235,6 @@ class MainWindow(QWidget):
             self.flex_original_pixmap = QPixmap(emblem_path)
             self.flex_emblem.clear()
             QTimer.singleShot(0, self.scale_emblems)
-
             self.flex_text.setText(
                 f"{tier.title()} {flex['rank']} - {flex['leaguePoints']} LP\n"
                 f"Wins: {flex['wins']}  Losses: {flex['losses']}"
@@ -216,9 +248,9 @@ class MainWindow(QWidget):
             self.flex_text.setText("Flex\nUnranked")
             self.toggle_btn.hide()
 
-    # -------------------------
-    # Toggle flex visibility
-    # -------------------------
+    # --------------------------------------------------
+    # Toggle flex
+    # --------------------------------------------------
     def toggle_flex(self):
         if self.flex_visible:
             self.flex_container.hide()
@@ -228,38 +260,70 @@ class MainWindow(QWidget):
             self.flex_container.show()
             self.toggle_btn.setText("Hide Flex Ranking")
             self.flex_visible = True
-            QTimer.singleShot(0, self.scale_emblems)  # Ensure scaled correctly
+            QTimer.singleShot(0, self.scale_emblems)
 
-    # -------------------------
-    # Fullscreen / restore
-    # -------------------------
+    # --------------------------------------------------
+    # Champ Select Screen
+    # --------------------------------------------------
+    def on_show_champ(self):
+        # Switch to champ-select screen
+        self.stack.setCurrentIndex(1)
+        self.champ_timer.start()
+        self.update_champ_select()
+
+    def go_back(self):
+        self.champ_timer.stop()
+        self.stack.setCurrentIndex(0)
+
+    def update_champ_select(self):
+        client = LeagueClient()
+        status, data = client.get_champ_select()
+
+        if status != 200:
+            self.champ_select_label.setText("Not in champ select.")
+            return
+
+        picks = []
+        bans = []
+
+        try:
+            for team in data.get("myTeam", []):
+                champ = team.get("championId")
+                if champ and champ != 0:
+                    picks.append(champ)
+
+            for group in data.get("actions", []):
+                for action in group:
+                    if action.get("type") == "ban" and action.get("completed"):
+                        bans.append(action.get("championId"))
+        except Exception:
+            pass
+
+        self.champ_select_label.setText(
+            f"Champion Select\n\nPicks: {picks}\nBans:  {bans}"
+        )
+
+    # --------------------------------------------------
+    # Scaling + Events
+    # --------------------------------------------------
     def changeEvent(self, event):
         if event.type() == QEvent.WindowStateChange:
-            # Track maximize transitions robustly
             now_maximized = bool(self.windowState() & Qt.WindowMaximized)
             if now_maximized:
-                # Record that we are now maximized; do not update normal_geometry_rect while maximized
                 self.was_maximized = True
             else:
-                # If we were maximized and now are not, we need to force the normal geometry
                 if self.was_maximized:
-                    # First ensure we are in normal state
                     try:
                         self.showNormal()
                     except Exception:
                         pass
-
-                    # Use a small delay to allow Qt to finish internal state changes
                     QTimer.singleShot(50, self._apply_saved_normal_geometry_and_scale)
-
                 self.was_maximized = False
 
-            # Track fullscreen separately
             if self.windowState() & Qt.WindowFullScreen:
                 self.is_fullscreen = True
             else:
                 if self.is_fullscreen:
-                    # If leaving fullscreen, restore the saved geometry
                     try:
                         self.restoreGeometry(self.normal_geometry_data)
                     except Exception:
@@ -269,25 +333,15 @@ class MainWindow(QWidget):
         super().changeEvent(event)
 
     def _apply_saved_normal_geometry_and_scale(self):
-        """
-        Apply the stored normal_geometry_rect if it looks valid. If it appears to be
-        nearly the size of the screen (i.e. corrupted / actually maximized), fall back
-        to a sensible default size and center it.
-        """
         try:
             screen = self.screen()
-            if screen:
-                scr_geom = screen.availableGeometry()
-            else:
-                scr_geom = None
+            scr_geom = screen.availableGeometry() if screen else None
         except Exception:
             scr_geom = None
 
         use_rect = None
         if isinstance(self.normal_geometry_rect, QRect) and not self.normal_geometry_rect.isNull():
-            # If we have a screen, reject rects that appear to be maximized (very large)
             if scr_geom:
-                # Treat rects that are >= 90% of screen height or width as invalid
                 if (self.normal_geometry_rect.width() >= scr_geom.width() * 0.9 or
                         self.normal_geometry_rect.height() >= scr_geom.height() * 0.9):
                     use_rect = None
@@ -297,7 +351,6 @@ class MainWindow(QWidget):
                 use_rect = self.normal_geometry_rect
 
         if use_rect is None:
-            # fallback geometry: 800x600 centered in screen if possible, otherwise just 800x600
             fallback_w, fallback_h = 800, 600
             if scr_geom:
                 cx = scr_geom.x() + (scr_geom.width() - fallback_w) // 2
@@ -306,7 +359,6 @@ class MainWindow(QWidget):
             else:
                 use_rect = QRect(100, 100, fallback_w, fallback_h)
 
-        # Apply geometry and then scale emblems after a tiny delay so layouts settle
         try:
             self.setGeometry(use_rect)
         except Exception:
@@ -317,11 +369,7 @@ class MainWindow(QWidget):
 
         QTimer.singleShot(0, self.scale_emblems)
 
-    # -------------------------
-    # Resize event (for fonts)
-    # -------------------------
     def resizeEvent(self, event):
-        # Update saved normal geometry only when NOT maximized/fullscreen
         if not (self.windowState() & Qt.WindowMaximized) and not (self.windowState() & Qt.WindowFullScreen):
             try:
                 self.normal_geometry_rect = self.geometry()
@@ -330,21 +378,15 @@ class MainWindow(QWidget):
                 pass
 
         self.scale_fonts()
-        QTimer.singleShot(0, self.scale_emblems)  # Defer emblem scaling
+        QTimer.singleShot(0, self.scale_emblems)
         super().resizeEvent(event)
 
-    # -------------------------
-    # Event filter for QLabel resizing
-    # -------------------------
     def eventFilter(self, obj, event):
         if event.type() == QEvent.Resize:
             if obj == self.solo_emblem or obj == self.flex_emblem:
-                QTimer.singleShot(0, self.scale_emblems)  # defer scaling
+                QTimer.singleShot(0, self.scale_emblems)
         return super().eventFilter(obj, event)
 
-    # -------------------------
-    # Scale fonts dynamically
-    # -------------------------
     def scale_fonts(self):
         font_size = max(12, self.width() // 35)
         font = QFont(self.base_font)
@@ -355,27 +397,14 @@ class MainWindow(QWidget):
         self.flex_label_title.setFont(font)
         self.summoner_label.setFont(font)
 
-    # -------------------------
-    # Scale emblems based on QLabel size
-    # -------------------------
     def scale_emblems(self):
         if self.solo_original_pixmap:
             lw, lh = self.solo_emblem.width(), self.solo_emblem.height()
-            # avoid scaling when label hasn't got a proper size yet
             if lw > 1 and lh > 1:
                 scaled = self.solo_original_pixmap.scaled(
-                    QSize(lw, lh),
-                    Qt.KeepAspectRatio,
-                    Qt.SmoothTransformation
+                    QSize(lw, lh), Qt.KeepAspectRatio, Qt.SmoothTransformation
                 )
                 self.solo_emblem.setPixmap(scaled)
 
         if self.flex_original_pixmap:
-            lw, lh = self.flex_emblem.width(), self.flex_emblem.height()
-            if lw > 1 and lh > 1:
-                scaled = self.flex_original_pixmap.scaled(
-                    QSize(lw, lh),
-                    Qt.KeepAspectRatio,
-                    Qt.SmoothTransformation
-                )
-                self.flex_emblem.setPixmap(scaled)
+            lw, lh = self.flex_emblem.width(), self.flex_emblem
