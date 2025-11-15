@@ -138,84 +138,92 @@ class MainWindow(QWidget):
         # CHAMP SELECT SCREEN
         # --------------------------------------------------
         self.champ_screen = QWidget()
-        self.champ_layout = QVBoxLayout(self.champ_screen)
+        self.champ_layout = QVBoxLayout(self.champ_screen)  # Only assign once!
 
         # Back button
         self.back_btn = QPushButton("← Back")
         self.back_btn.clicked.connect(self.go_back)
-        self.champ_layout.addWidget(self.back_btn)
 
         # Info label
         self.champ_select_label = QLabel("Champion select will appear here.")
         self.champ_select_label.setAlignment(Qt.AlignCenter)
         self.champ_select_label.setWordWrap(True)
-        self.champ_layout.addWidget(self.champ_select_label)
 
-        # Empty box lists
-        self.my_team_labels = [QLabel() for _ in range(5)]
-        self.enemy_team_labels = [QLabel() for _ in range(5)]
-        self.my_ban_labels = [QLabel() for _ in range(5)]
-        self.enemy_ban_labels = [QLabel() for _ in range(5)]
+        # Top container: back button + info label
+        top_container = QVBoxLayout()
+        top_container.addWidget(self.back_btn)
+        top_container.addWidget(self.champ_select_label)
+        self.champ_layout.addLayout(top_container)
 
-        # Set default empty boxes
-        for i, lbl in enumerate(self.my_team_labels):
-            lbl.setFixedSize(64, 64)
-            lbl.setStyleSheet("border:2px solid gray; background-color: #ddeeff;")  # default blue
-        for i, lbl in enumerate(self.enemy_team_labels):
-            lbl.setFixedSize(64, 64)
-            lbl.setStyleSheet("border:2px solid gray; background-color: #ffdddd;")  # default red
-        # Blue side bans (ally)
-        for i, lbl in enumerate(self.my_ban_labels):
-            lbl.setFixedSize(48, 48)
-            lbl.setStyleSheet("border:2px solid gray; background-color: #ddeeff;")  # blue inner color
-
-        # Red side bans (enemy)
-        for i, lbl in enumerate(self.enemy_ban_labels):
-            lbl.setFixedSize(48, 48)
-            lbl.setStyleSheet("border:2px solid gray; background-color: #ffdddd;")  # red inner color
-
-
-        # Ban layout container
+        # Bans container
         self.bans_container = QWidget()
+        self.bans_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.bans_layout = QHBoxLayout(self.bans_container)
-        for lbl in self.my_ban_labels:  # left side (blue)
-            self.bans_layout.addWidget(lbl)
+        self.bans_layout.setContentsMargins(10, 10, 10, 10)
+        self.bans_layout.setSpacing(10)
+
+        # Blue bans
+        self.my_ban_labels = [QLabel() for _ in range(5)]
+        self.blue_ban_layout = QHBoxLayout()
+        self.blue_ban_layout.setSpacing(4)
+        self.blue_ban_layout.setAlignment(Qt.AlignLeft)
+        for lbl in self.my_ban_labels:
+            lbl.setFixedSize(48, 48)
+            lbl.setStyleSheet("border:2px solid gray; background-color: #ddeeff;")
+            self.blue_ban_layout.addWidget(lbl)
+        self.bans_layout.addLayout(self.blue_ban_layout)
+
         self.bans_layout.addStretch()
-        for lbl in self.enemy_ban_labels:  # right side (red)
-            self.bans_layout.addWidget(lbl)
+
+        # Red bans
+        self.enemy_ban_labels = [QLabel() for _ in range(5)]
+        self.red_ban_layout = QHBoxLayout()
+        self.red_ban_layout.setSpacing(4)
+        self.red_ban_layout.setAlignment(Qt.AlignRight)
+        for lbl in self.enemy_ban_labels:
+            lbl.setFixedSize(48, 48)
+            lbl.setStyleSheet("border:2px solid gray; background-color: #ffdddd;")
+            self.red_ban_layout.addWidget(lbl)
+        self.bans_layout.addLayout(self.red_ban_layout)
+
         self.champ_layout.addWidget(self.bans_container)
-        self.bans_container.hide()  # initially hidden until champ select
+        self.bans_container.hide()
 
-
-        # Picks layout container
+        # Picks container
         self.picks_container = QWidget()
         self.picks_layout = QHBoxLayout(self.picks_container)
 
-        # Blue side picks layout (left)
+        # Blue picks
+        self.my_team_labels = [QLabel() for _ in range(5)]
         self.blue_team_layout = QVBoxLayout()
         for lbl in self.my_team_labels:
+            lbl.setFixedSize(64, 64)
+            lbl.setStyleSheet("border:2px solid gray; background-color: #ddeeff;")
             self.blue_team_layout.addWidget(lbl)
         self.picks_layout.addLayout(self.blue_team_layout)
 
         self.picks_layout.addStretch()
 
-        # Red side picks layout (right)
+        # Red picks
+        self.enemy_team_labels = [QLabel() for _ in range(5)]
         self.red_team_layout = QVBoxLayout()
         for lbl in self.enemy_team_labels:
+            lbl.setFixedSize(64, 64)
+            lbl.setStyleSheet("border:2px solid gray; background-color: #ffdddd;")
             self.red_team_layout.addWidget(lbl)
         self.picks_layout.addLayout(self.red_team_layout)
 
-        self.champ_layout.addWidget(self.picks_container)
-        self.picks_container.hide()  # initially hidden until champ select
+        self.champ_layout.addWidget(self.picks_container, alignment=Qt.AlignTop)
+        self.picks_container.hide()
 
-
-        self.stack.addWidget(self.champ_screen)
-
-
-        # Timer
+        # Timer for champ select updates
         self.champ_timer = QTimer(self)
         self.champ_timer.setInterval(1000)
         self.champ_timer.timeout.connect(self.update_champ_select)
+
+        # ADD TO STACKED LAYOUT (fixes the screen not showing)
+        self.stack.addWidget(self.champ_screen)
+
 
 
     # --------------------------------------------------
@@ -575,47 +583,44 @@ class MainWindow(QWidget):
                 self.solo_emblem.setPixmap(scaled)
 
         if self.flex_original_pixmap:
-            lw, lh = self.flex_emblem.width(), self.flex_emblem
+            lw, lh = self.flex_emblem.width(), self.flex_emblem.height()  # <-- fix here
+            if lw > 1 and lh > 1:
+                scaled = self.flex_original_pixmap.scaled(
+                    QSize(lw, lh), Qt.KeepAspectRatio, Qt.SmoothTransformation
+                )
+                self.flex_emblem.setPixmap(scaled)
+
 
     def update_box_sizes(self):
         # Original fixed sizes
         pick_orig_w, pick_orig_h = 64, 64
         ban_orig_w, ban_orig_h = 48, 48
 
-        # Determine available space in the champ screen
-        total_width = self.champ_screen.width()
         total_height = self.champ_screen.height()
 
-        # Picks: left/right vertical stacks (5 boxes)
-        max_pick_height = total_height // 2  # leave room for other widgets, adjust if needed
-        pick_scale_factor = min(max_pick_height / (pick_orig_h * 5), 1.0)  # don't shrink below original
+        # Leave room for back button + label (~100px)
+        available_height = max(total_height - 100, 1)
 
+        # Picks: vertical stacks of 5
+        pick_scale_factor = min(available_height / (pick_orig_h * 5), 1.0)
         pick_size = QSize(int(pick_orig_w * pick_scale_factor), int(pick_orig_h * pick_scale_factor))
 
-        # Blue picks
-        for lbl in self.my_team_labels:
-            lbl.setFixedSize(pick_size)
-            self.scale_pixmap_to_label(lbl)
-
-        # Red picks
-        for lbl in self.enemy_team_labels:
-            lbl.setFixedSize(pick_size)
-            self.scale_pixmap_to_label(lbl)
-
-        # Bans: horizontal, keep a small gap between blue/red side
-        max_ban_width = (total_width - 40) // 10  # 5 per side, 40px total gap
-        ban_scale_factor = min(max_ban_width / ban_orig_w, 1.0)  # don't shrink below original
+        # Ban boxes are 75% of picks
+        ban_scale_factor = pick_scale_factor * 0.75
         ban_size = QSize(int(ban_orig_w * ban_scale_factor), int(ban_orig_h * ban_scale_factor))
 
-        # Blue bans
-        for lbl in self.my_ban_labels:
+        # Scale picks
+        for lbl in self.my_team_labels + self.enemy_team_labels:
+            lbl.setFixedSize(pick_size)
+            self.scale_pixmap_to_label(lbl)
+
+        # Scale blue and red bans
+        for lbl in self.my_ban_labels + self.enemy_ban_labels:
             lbl.setFixedSize(ban_size)
             self.scale_pixmap_to_label(lbl)
 
-        # Red bans
-        for lbl in self.enemy_ban_labels:
-            lbl.setFixedSize(ban_size)
-            self.scale_pixmap_to_label(lbl)
+
+
 
     def scale_pixmap_to_label(self, lbl):
         pixmap = lbl.pixmap()
