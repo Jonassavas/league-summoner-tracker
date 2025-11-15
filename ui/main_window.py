@@ -213,6 +213,16 @@ class MainWindow(QWidget):
             self.red_team_layout.addWidget(lbl)
         self.picks_layout.addLayout(self.red_team_layout)
 
+        # Store original QPixmaps for champion picks and bans
+        self.pick_original_pixmaps = {}  # key = QLabel, value = QPixmap
+        self.ban_original_pixmaps = {}   # key = QLabel, value = QPixmap
+
+        # Add spacing between picks
+        self.blue_team_layout.setSpacing(5)
+        self.red_team_layout.setSpacing(5)
+
+
+
         self.champ_layout.addWidget(self.picks_container, alignment=Qt.AlignTop)
         self.picks_container.hide()
 
@@ -361,54 +371,32 @@ class MainWindow(QWidget):
             else:
                 red_team.append(champ)
 
-        # Update picks
+        # Blue team picks
         for i, champ in enumerate(blue_team):
             if i >= 5:
                 continue
             icon_path = self.champ_data.get_champion_icon(champ.get("championId"))
             if icon_path:
-                pix = QPixmap(icon_path).scaled(64, 64, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                pix = QPixmap(icon_path)  # store original
                 lbl = self.blue_team_layout.itemAt(i).widget()
-                lbl.setPixmap(pix)
+                self.pick_original_pixmaps[lbl] = pix
+                self.scale_pixmap_to_label(lbl)
                 lbl.setStyleSheet("border:2px solid #0000ff; background-color: #ddeeff;")
 
+        # Red team picks
         for i, champ in enumerate(red_team):
             if i >= 5:
                 continue
             icon_path = self.champ_data.get_champion_icon(champ.get("championId"))
             if icon_path:
-                pix = QPixmap(icon_path).scaled(64, 64, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                pix = QPixmap(icon_path)  # store original
                 lbl = self.red_team_layout.itemAt(i).widget()
-                lbl.setPixmap(pix)
+                self.pick_original_pixmaps[lbl] = pix
+                self.scale_pixmap_to_label(lbl)
                 lbl.setStyleSheet("border:2px solid #ff0000; background-color: #ffdddd;")
 
-        # Update bans
-        blue_ban_index = 0
-        red_ban_index = 4
-        for group in data.get("actions", []):
-            for action in group:
-                if action.get("type") != "ban" or not action.get("completed"):
-                    continue
-                champ_id = action.get("championId")
-                icon_path = self.champ_data.get_champion_icon(champ_id)
-                if not icon_path:
-                    continue
-                pix = QPixmap(icon_path).scaled(48, 48, Qt.KeepAspectRatio, Qt.SmoothTransformation)
 
-                team_side = 1 if action.get("isAllyAction") else 2
-                if team_side == 1 and blue_ban_index < 5:
-                    lbl = self.my_ban_labels[blue_ban_index]
-                    lbl.setPixmap(pix)
-                    lbl.setStyleSheet("border:2px solid #0000ff; background-color: #ddeeff;")
-                    blue_ban_index += 1
-                elif team_side == 2 and red_ban_index >= 0:
-                    lbl = self.enemy_ban_labels[red_ban_index]
-                    lbl.setPixmap(pix)
-                    lbl.setStyleSheet("border:2px solid #ff0000; background-color: #ffdddd;")
-                    red_ban_index -= 1
-
-
-        # Update bans
+        # Update bans properly
         blue_ban_index = 0
         red_ban_index = 4
 
@@ -420,53 +408,22 @@ class MainWindow(QWidget):
                 icon_path = self.champ_data.get_champion_icon(champ_id)
                 if not icon_path:
                     continue
-                pix = QPixmap(icon_path).scaled(48, 48, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                pix = QPixmap(icon_path)  # store original
 
                 team_side = 1 if action.get("isAllyAction") else 2
-                if team_side == 1 and blue_ban_index < 5:  # Blue side bans (left)
+                if team_side == 1 and blue_ban_index < 5:  # Blue side bans
                     lbl = self.my_ban_labels[blue_ban_index]
-                    lbl.setPixmap(pix)
+                    self.ban_original_pixmaps[lbl] = pix
+                    self.scale_pixmap_to_label(lbl)
                     lbl.setStyleSheet("border:2px solid #0000ff; background-color: #ddeeff;")
                     blue_ban_index += 1
-                elif team_side == 2 and red_ban_index >= 0:  # Red side bans (right)
+                elif team_side == 2 and red_ban_index >= 0:  # Red side bans
                     lbl = self.enemy_ban_labels[red_ban_index]
-                    lbl.setPixmap(pix)
+                    self.ban_original_pixmaps[lbl] = pix
+                    self.scale_pixmap_to_label(lbl)
                     lbl.setStyleSheet("border:2px solid #ff0000; background-color: #ffdddd;")
                     red_ban_index -= 1
 
-
-
-
-        # Update bans using isAllyAction
-        # Blue side bans → left → right
-        # Red side bans → right → left
-        blue_ban_index = 0
-        red_ban_index = 4
-
-        blue_ban_index = 0
-        red_ban_index = 4
-
-        for group in data.get("actions", []):
-            for action in group:
-                if action.get("type") != "ban" or not action.get("completed"):
-                    continue
-                champ_id = action.get("championId")
-                icon_path = self.champ_data.get_champion_icon(champ_id)
-                if not icon_path:
-                    continue
-                pix = QPixmap(icon_path).scaled(48, 48, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-
-                team_side = 1 if action.get("isAllyAction") else 2
-                if team_side == 1 and blue_ban_index < 5:  # Blue side bans (left)
-                    lbl = self.my_ban_labels[blue_ban_index]
-                    lbl.setPixmap(pix)
-                    lbl.setStyleSheet("border:2px solid #0000ff; background-color: #ddeeff;")
-                    blue_ban_index += 1
-                elif team_side == 2 and red_ban_index >= 0:  # Red side bans (right)
-                    lbl = self.enemy_ban_labels[red_ban_index]
-                    lbl.setPixmap(pix)
-                    lbl.setStyleSheet("border:2px solid #ff0000; background-color: #ffdddd;")
-                    red_ban_index -= 1
 
 
 
@@ -646,13 +603,21 @@ class MainWindow(QWidget):
 
 
     def scale_pixmap_to_label(self, lbl):
-        pixmap = lbl.pixmap()
+        # Picks
+        if lbl in self.pick_original_pixmaps:
+            pixmap = self.pick_original_pixmaps[lbl]
+        # Bans
+        elif lbl in self.ban_original_pixmaps:
+            pixmap = self.ban_original_pixmaps[lbl]
+        else:
+            pixmap = lbl.pixmap()
+
         if pixmap:
-            # Keep the original pixmap aspect ratio
             scaled = pixmap.scaled(
                 lbl.width(), lbl.height(),
                 Qt.KeepAspectRatio,
                 Qt.SmoothTransformation
             )
             lbl.setPixmap(scaled)
+
 
