@@ -9,6 +9,9 @@ from PySide6.QtGui import QPixmap, QFont
 from api.riot_api import RiotAPI
 from utils.assets import get_emblem_path
 from api.league_client import LeagueClient
+from api.champion_data import ChampionData
+from PySide6.QtWidgets import QHBoxLayout, QLabel
+
 
 
 class MainWindow(QWidget):
@@ -19,6 +22,8 @@ class MainWindow(QWidget):
         self.api = RiotAPI()
         self.rank_data = None
         self.flex_visible = False
+        self.champ_data = ChampionData()  # builds id->name mapping, caches patch
+
 
         # Window settings
         self.setWindowTitle("League Summoner Tracker")
@@ -148,27 +153,32 @@ class MainWindow(QWidget):
         # Register main screen in stack
         self.stack.addWidget(self.main_screen)
 
-        # --------------------------------------------------
+        # -------------------
         # CHAMP SELECT SCREEN
-        # --------------------------------------------------
+        # -------------------
         self.champ_screen = QWidget()
-        champ_layout = QVBoxLayout(self.champ_screen)
+        self.champ_layout = QVBoxLayout(self.champ_screen)  # store as self
 
+        # Back button (always stays)
         self.back_btn = QPushButton("← Back")
         self.back_btn.clicked.connect(self.go_back)
-        champ_layout.addWidget(self.back_btn)
+        self.champ_layout.addWidget(self.back_btn)
 
+        # Timer for live champ-select updates
+        self.champ_timer = QTimer(self)
+        self.champ_timer.setInterval(1000)  # 1 second
+        self.champ_timer.timeout.connect(self.update_champ_select)
+
+
+        # Label for messages
         self.champ_select_label = QLabel("Champion select will appear here.")
         self.champ_select_label.setAlignment(Qt.AlignCenter)
         self.champ_select_label.setWordWrap(True)
-        champ_layout.addWidget(self.champ_select_label)
+        self.champ_layout.addWidget(self.champ_select_label)
 
+        # Add champ screen to stacked layout
         self.stack.addWidget(self.champ_screen)
 
-        # Timer for live champ-select updates
-        self.champ_timer = QTimer()
-        self.champ_timer.setInterval(1000)
-        self.champ_timer.timeout.connect(self.update_champ_select)
 
     # --------------------------------------------------
     # Search button logic
@@ -279,29 +289,58 @@ class MainWindow(QWidget):
         client = LeagueClient()
         status, data = client.get_champ_select()
 
-        if status != 200:
+        if status != 200 or not data:
             self.champ_select_label.setText("Not in champ select.")
             return
 
-        picks = []
-        bans = []
+        # Clear previous picks/bans layouts but keep first two widgets (back button + label)
+        while self.champ_layout.count() > 2:
+            item = self.champ_layout.takeAt(2)
+            if item.widget():
+                item.widget().deleteLater()
 
-        try:
-            for team in data.get("myTeam", []):
-                champ = team.get("championId")
-                if champ and champ != 0:
-                    picks.append(champ)
+        # Layouts for picks, enemy team, bans
+        my_team_layout = QHBoxLayout()
+        enemy_team_layout = QHBoxLayout()
+        bans_layout = QHBoxLayout()
 
-            for group in data.get("actions", []):
-                for action in group:
-                    if action.get("type") == "ban" and action.get("completed"):
-                        bans.append(action.get("championId"))
-        except Exception:
-            pass
+        # Fill my team picks
+        for champ in data.get("myTeam", []):
+            champ_id = champ.get("championId")
+            label = QLabel()
+            icon_path = self.champ_data.get_champion_icon(champ_id)
+            if icon_path:
+                pix = QPixmap(icon_path).scaled(64, 64, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                label.setPixmap(pix)
+            my_team_layout.addWidget(label)
 
-        self.champ_select_label.setText(
-            f"Champion Select\n\nPicks: {picks}\nBans:  {bans}"
-        )
+        # Fill enemy team picks
+        for champ in data.get("theirTeam", []):
+            champ_id = champ.get("championId")
+            label = QLabel()
+            icon_path = self.champ_data.get_champion_icon(champ_id)
+            if icon_path:
+                pix = QPixmap(icon_path).scaled(64, 64, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                label.setPixmap(pix)
+            enemy_team_layout.addWidget(label)
+
+        # Fill bans
+        for group in data.get("actions", []):
+            for action in group:
+                if action.get("type") == "ban" and action.get("completed"):
+                    champ_id = action.get("championId")
+                    label = QLabel()
+                    icon_path = self.champ_data.get_champion_icon(champ_id)
+                    if icon_path:
+                        pix = QPixmap(icon_path).scaled(64, 64, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                        label.setPixmap(pix)
+                    bans_layout.addWidget(label)
+
+        # Add layouts to main champ layout
+        self.champ_layout.addLayout(my_team_layout)
+        self.champ_layout.addLayout(enemy_team_layout)
+        self.champ_layout.addLayout(bans_layout)
+
 
     # --------------------------------------------------
     # Scaling + Events
