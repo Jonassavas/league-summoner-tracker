@@ -28,3 +28,7 @@ env/
 
 # Logs
 *.log
+
+
+# Don't include downloaded champion assets
+/assets/champions/

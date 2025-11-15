@@ -10,7 +10,6 @@ from api.riot_api import RiotAPI
 from utils.assets import get_emblem_path
 from api.league_client import LeagueClient
 from api.champion_data import ChampionData
-from PySide6.QtWidgets import QHBoxLayout, QLabel
 
 
 
@@ -24,13 +23,11 @@ class MainWindow(QWidget):
         self.flex_visible = False
         self.champ_data = ChampionData()  # builds id->name mapping, caches patch
 
-
         # Window settings
         self.setWindowTitle("League Summoner Tracker")
         self.setMinimumWidth(500)
         self.setMinimumHeight(400)
 
-        # Save initial geometry for restore
         self.normal_geometry_data = self.saveGeometry()
         self.normal_geometry_rect = self.geometry()
         self.was_maximized = False
@@ -53,7 +50,6 @@ class MainWindow(QWidget):
         self.tag_input = QLineEdit()
         self.name_input.setPlaceholderText("e.g. Jone")
         self.tag_input.setPlaceholderText("e.g. SWE")
-
         form_layout = QFormLayout()
         form_layout.addRow("Name:", self.name_input)
         form_layout.addRow("Tag Line #:", self.tag_input)
@@ -63,27 +59,20 @@ class MainWindow(QWidget):
         content_layout = QHBoxLayout()
         self.left_column = QVBoxLayout()
 
-        # Buttons
         self.search_btn = QPushButton("Search")
         self.search_btn.setFixedHeight(40)
         self.search_btn.clicked.connect(self.on_search)
-
         self.toggle_btn = QPushButton("Show Flex Ranking")
         self.toggle_btn.setFixedHeight(40)
         self.toggle_btn.clicked.connect(self.toggle_flex)
         self.toggle_btn.hide()
-
-        # Champ select button
         self.champ_btn = QPushButton("Show Champ-Select")
         self.champ_btn.setFixedHeight(40)
         self.champ_btn.clicked.connect(self.on_show_champ)
-
-        # Summoner label
         self.summoner_label = QLabel("")
         self.summoner_label.setAlignment(Qt.AlignCenter)
         self.summoner_label.setWordWrap(True)
 
-        # Add to left column
         self.left_column.addWidget(self.search_btn)
         self.left_column.addWidget(self.toggle_btn)
         self.left_column.addWidget(self.champ_btn)
@@ -91,10 +80,9 @@ class MainWindow(QWidget):
         self.left_column.addWidget(self.summoner_label)
         content_layout.addLayout(self.left_column, 1)
 
-        # Right column (rank info)
+        # Right column for rank info
         self.rank_layout = QHBoxLayout()
-
-        # SOLO container
+        # Solo/Duo
         self.solo_container = QWidget()
         self.solo_vbox = QVBoxLayout(self.solo_container)
         self.solo_label_title = QLabel("Solo/Duo")
@@ -112,7 +100,7 @@ class MainWindow(QWidget):
         self.solo_vbox.addWidget(self.solo_text)
         self.solo_container.hide()
 
-        # FLEX container
+        # Flex
         self.flex_container = QWidget()
         self.flex_vbox = QVBoxLayout(self.flex_container)
         self.flex_label_title = QLabel("Flex")
@@ -130,54 +118,83 @@ class MainWindow(QWidget):
         self.flex_vbox.addWidget(self.flex_text)
         self.flex_container.hide()
 
-        # Add rank widgets
         self.rank_layout.addWidget(self.solo_container, 1)
         self.rank_layout.addWidget(self.flex_container, 1)
         content_layout.addLayout(self.rank_layout, 4)
-
         main_layout.addLayout(content_layout)
 
-        # Scaling
+        # Font scaling
         self.base_font = QFont()
         self.base_font.setPointSize(12)
-        self.solo_text.setFont(self.base_font)
-        self.flex_text.setFont(self.base_font)
-        self.solo_label_title.setFont(self.base_font)
-        self.flex_label_title.setFont(self.base_font)
-        self.summoner_label.setFont(self.base_font)
+        for widget in [self.solo_text, self.flex_text, self.solo_label_title, self.flex_label_title, self.summoner_label]:
+            widget.setFont(self.base_font)
 
-        # Pixmaps
         self.solo_original_pixmap = None
         self.flex_original_pixmap = None
 
-        # Register main screen in stack
         self.stack.addWidget(self.main_screen)
 
-        # -------------------
+        # --------------------------------------------------
         # CHAMP SELECT SCREEN
-        # -------------------
+        # --------------------------------------------------
         self.champ_screen = QWidget()
-        self.champ_layout = QVBoxLayout(self.champ_screen)  # store as self
+        self.champ_layout = QVBoxLayout(self.champ_screen)
 
-        # Back button (always stays)
+        # Back button
         self.back_btn = QPushButton("← Back")
         self.back_btn.clicked.connect(self.go_back)
         self.champ_layout.addWidget(self.back_btn)
 
-        # Timer for live champ-select updates
-        self.champ_timer = QTimer(self)
-        self.champ_timer.setInterval(1000)  # 1 second
-        self.champ_timer.timeout.connect(self.update_champ_select)
-
-
-        # Label for messages
+        # Info label
         self.champ_select_label = QLabel("Champion select will appear here.")
         self.champ_select_label.setAlignment(Qt.AlignCenter)
         self.champ_select_label.setWordWrap(True)
         self.champ_layout.addWidget(self.champ_select_label)
 
-        # Add champ screen to stacked layout
+        # Empty box lists
+        self.my_team_labels = [QLabel() for _ in range(5)]
+        self.enemy_team_labels = [QLabel() for _ in range(5)]
+        self.my_ban_labels = [QLabel() for _ in range(5)]
+        self.enemy_ban_labels = [QLabel() for _ in range(5)]
+
+        # Set default empty boxes
+        for lbl in self.my_team_labels + self.enemy_team_labels:
+            lbl.setFixedSize(64, 64)
+            lbl.setStyleSheet("border:1px solid gray;")
+        for lbl in self.my_ban_labels + self.enemy_ban_labels:
+            lbl.setFixedSize(48, 48)
+            lbl.setStyleSheet("border:1px solid red;")
+
+        # Layouts
+        self.bans_layout = QHBoxLayout()
+        for lbl in self.enemy_ban_labels:
+            self.bans_layout.addWidget(lbl)
+        self.bans_layout.addStretch()
+        for lbl in self.my_ban_labels:
+            self.bans_layout.addWidget(lbl)
+        self.champ_layout.addLayout(self.bans_layout)
+
+        self.picks_layout = QHBoxLayout()
+        # Enemy picks
+        self.enemy_picks_layout = QVBoxLayout()
+        for lbl in self.enemy_team_labels:
+            self.enemy_picks_layout.addWidget(lbl)
+        self.picks_layout.addLayout(self.enemy_picks_layout)
+        self.picks_layout.addStretch()
+        # My picks
+        self.my_picks_layout = QVBoxLayout()
+        for lbl in self.my_team_labels:
+            self.my_picks_layout.addWidget(lbl)
+        self.picks_layout.addLayout(self.my_picks_layout)
+
+        self.champ_layout.addLayout(self.picks_layout)
+
         self.stack.addWidget(self.champ_screen)
+
+        # Timer
+        self.champ_timer = QTimer(self)
+        self.champ_timer.setInterval(1000)
+        self.champ_timer.timeout.connect(self.update_champ_select)
 
 
     # --------------------------------------------------
@@ -276,7 +293,6 @@ class MainWindow(QWidget):
     # Champ Select Screen
     # --------------------------------------------------
     def on_show_champ(self):
-        # Switch to champ-select screen
         self.stack.setCurrentIndex(1)
         self.champ_timer.start()
         self.update_champ_select()
@@ -289,57 +305,60 @@ class MainWindow(QWidget):
         client = LeagueClient()
         status, data = client.get_champ_select()
 
+        # Reset all boxes
+        for lbl in self.my_team_labels + self.enemy_team_labels + self.my_ban_labels + self.enemy_ban_labels:
+            lbl.clear()
+
         if status != 200 or not data:
             self.champ_select_label.setText("Not in champ select.")
             return
+        self.champ_select_label.setText("Champion Select Active")
 
-        # Clear previous picks/bans layouts but keep first two widgets (back button + label)
-        while self.champ_layout.count() > 2:
-            item = self.champ_layout.takeAt(2)
-            if item.widget():
-                item.widget().deleteLater()
-
-        # Layouts for picks, enemy team, bans
-        my_team_layout = QHBoxLayout()
-        enemy_team_layout = QHBoxLayout()
-        bans_layout = QHBoxLayout()
-
-        # Fill my team picks
-        for champ in data.get("myTeam", []):
+        # Update my team picks
+        for i, champ in enumerate(data.get("myTeam", [])):
             champ_id = champ.get("championId")
-            label = QLabel()
             icon_path = self.champ_data.get_champion_icon(champ_id)
-            if icon_path:
-                pix = QPixmap(icon_path).scaled(64, 64, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-                label.setPixmap(pix)
-            my_team_layout.addWidget(label)
+            if i < 5 and icon_path:
+                pix = QPixmap(icon_path).scaled(64,64,Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                self.my_team_labels[i].setPixmap(pix)
 
-        # Fill enemy team picks
-        for champ in data.get("theirTeam", []):
+        # Update enemy team picks
+        for i, champ in enumerate(data.get("theirTeam", [])):
             champ_id = champ.get("championId")
-            label = QLabel()
             icon_path = self.champ_data.get_champion_icon(champ_id)
-            if icon_path:
-                pix = QPixmap(icon_path).scaled(64, 64, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-                label.setPixmap(pix)
-            enemy_team_layout.addWidget(label)
+            if i < 5 and icon_path:
+                pix = QPixmap(icon_path).scaled(64,64,Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                self.enemy_team_labels[i].setPixmap(pix)
 
-        # Fill bans
+        # Update bans with proper left/right filling
+        # Update bans using isAllyAction
+        # Left side = my team → left → right
+        # Right side = enemy team → right → left
+        my_ban_index = 0
+        enemy_ban_index = 4
+
         for group in data.get("actions", []):
             for action in group:
                 if action.get("type") == "ban" and action.get("completed"):
                     champ_id = action.get("championId")
-                    label = QLabel()
                     icon_path = self.champ_data.get_champion_icon(champ_id)
-                    if icon_path:
-                        pix = QPixmap(icon_path).scaled(64, 64, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-                        label.setPixmap(pix)
-                    bans_layout.addWidget(label)
+                    if not icon_path:
+                        continue
+                    pix = QPixmap(icon_path).scaled(48,48,Qt.KeepAspectRatio, Qt.SmoothTransformation)
 
-        # Add layouts to main champ layout
-        self.champ_layout.addLayout(my_team_layout)
-        self.champ_layout.addLayout(enemy_team_layout)
-        self.champ_layout.addLayout(bans_layout)
+                    if action.get("isAllyAction", False):
+                        # My team ban → fill left → right
+                        if my_ban_index < 5:
+                            self.my_ban_labels[my_ban_index].setPixmap(pix)
+                            my_ban_index += 1
+                    else:
+                        # Enemy team ban → fill right → left
+                        if enemy_ban_index >= 0:
+                            self.enemy_ban_labels[enemy_ban_index].setPixmap(pix)
+                            enemy_ban_index -= 1
+
+
+
 
 
     # --------------------------------------------------
