@@ -592,32 +592,55 @@ class MainWindow(QWidget):
 
 
     def update_box_sizes(self):
+        if not self.champ_screen.isVisible():
+            return
+
         # Original fixed sizes
         pick_orig_w, pick_orig_h = 64, 64
         ban_orig_w, ban_orig_h = 48, 48
 
+        # Current available size
+        total_width = self.champ_screen.width()
         total_height = self.champ_screen.height()
 
-        # Leave room for back button + label (~100px)
-        available_height = max(total_height - 100, 1)
+        # Reserve space for back button + info label + some buffer (~120px)
+        reserved_height = 120
+        available_height = max(total_height - reserved_height, 1)
+        available_width = max(total_width - 40, 1)  # some horizontal padding
 
-        # Picks: vertical stacks of 5
-        pick_scale_factor = min(available_height / (pick_orig_h * 5), 1.0)
-        pick_size = QSize(int(pick_orig_w * pick_scale_factor), int(pick_orig_h * pick_scale_factor))
+        # Picks: 5 rows vertically, 2 columns (blue/red)
+        pick_rows = 5
+        pick_cols = 2
 
-        # Ban boxes are 75% of picks
-        ban_scale_factor = pick_scale_factor * 0.75
-        ban_size = QSize(int(ban_orig_w * ban_scale_factor), int(ban_orig_h * ban_scale_factor))
+        # Max height scale
+        pick_scale_v = available_height / (pick_orig_h * pick_rows)
+        # Max width scale
+        pick_scale_h = available_width / (pick_orig_w * pick_cols)
 
-        # Scale picks
+        # Use the smaller of width or height scaling to maintain aspect ratio
+        pick_scale = min(pick_scale_v, pick_scale_h)
+
+        # Pick size
+        pick_size = QSize(int(pick_orig_w * pick_scale), int(pick_orig_h * pick_scale))
+        # Ban size ~ 75% of pick size
+        ban_size = QSize(int(ban_orig_w * pick_scale * 0.75), int(ban_orig_h * pick_scale * 0.75))
+
+        # Apply pick sizes
         for lbl in self.my_team_labels + self.enemy_team_labels:
             lbl.setFixedSize(pick_size)
             self.scale_pixmap_to_label(lbl)
 
-        # Scale blue and red bans
+        # Apply ban sizes
         for lbl in self.my_ban_labels + self.enemy_ban_labels:
             lbl.setFixedSize(ban_size)
             self.scale_pixmap_to_label(lbl)
+
+        # Optional: small padding between top/bottom
+        padding = max(5, int(pick_size.height() * 0.05))
+        self.picks_layout.setContentsMargins(0, padding, 0, padding)
+        self.bans_layout.setContentsMargins(10, padding, 10, padding)
+
+
 
 
 
