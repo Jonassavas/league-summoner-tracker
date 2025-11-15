@@ -3,7 +3,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLineEdit,
     QPushButton, QLabel, QFormLayout, QSizePolicy
 )
-from PySide6.QtCore import Qt, QEvent
+from PySide6.QtCore import Qt, QEvent, QTimer, QRect, QSize
 from PySide6.QtGui import QPixmap, QFont
 from api.riot_api import RiotAPI
 from utils.assets import get_emblem_path
@@ -25,6 +25,8 @@ class MainWindow(QWidget):
 
         # Save initial geometry for restore
         self.normal_geometry_data = self.saveGeometry()
+        self.normal_geometry_rect = self.geometry()  # QRect of last non-maximized geometry
+        self.was_maximized = False
         self.is_fullscreen = False
 
         main_layout = QVBoxLayout()
@@ -79,9 +81,10 @@ class MainWindow(QWidget):
         self.solo_label_title.setAlignment(Qt.AlignCenter)
         self.solo_emblem = QLabel()
         self.solo_emblem.setAlignment(Qt.AlignCenter)
-        self.solo_emblem.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        # Keep expanding horizontally but ignore vertical hint (avoids forcing height)
+        self.solo_emblem.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Ignored)
         self.solo_emblem.setMinimumSize(1, 1)
-        self.solo_emblem.installEventFilter(self)  # <- event filter for resizing
+        self.solo_emblem.installEventFilter(self)
         self.solo_text = QLabel("")
         self.solo_text.setAlignment(Qt.AlignCenter)
         self.solo_text.setWordWrap(True)
@@ -97,7 +100,7 @@ class MainWindow(QWidget):
         self.flex_label_title.setAlignment(Qt.AlignCenter)
         self.flex_emblem = QLabel()
         self.flex_emblem.setAlignment(Qt.AlignCenter)
-        self.flex_emblem.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.flex_emblem.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Ignored)
         self.flex_emblem.setMinimumSize(1, 1)
         self.flex_emblem.installEventFilter(self)
         self.flex_text = QLabel("")
@@ -175,7 +178,10 @@ class MainWindow(QWidget):
             tier = solo["tier"]
             emblem_path = get_emblem_path(tier)
             self.solo_original_pixmap = QPixmap(emblem_path)
-            self.solo_emblem.setPixmap(self.solo_original_pixmap)
+            # Clear any previous pixmap before scaling to avoid label forcing size
+            self.solo_emblem.clear()
+            # Scale after layout stabilizes
+            QTimer.singleShot(0, self.scale_emblems)
 
             self.solo_text.setText(
                 f"{tier.title()} {solo['rank']} - {solo['leaguePoints']} LP\n"
@@ -194,7 +200,8 @@ class MainWindow(QWidget):
             tier = flex["tier"]
             emblem_path = get_emblem_path(tier)
             self.flex_original_pixmap = QPixmap(emblem_path)
-            self.flex_emblem.setPixmap(self.flex_original_pixmap)
+            self.flex_emblem.clear()
+            QTimer.singleShot(0, self.scale_emblems)
 
             self.flex_text.setText(
                 f"{tier.title()} {flex['rank']} - {flex['leaguePoints']} LP\n"
@@ -221,27 +228,109 @@ class MainWindow(QWidget):
             self.flex_container.show()
             self.toggle_btn.setText("Hide Flex Ranking")
             self.flex_visible = True
+            QTimer.singleShot(0, self.scale_emblems)  # Ensure scaled correctly
 
     # -------------------------
     # Fullscreen / restore
     # -------------------------
     def changeEvent(self, event):
         if event.type() == QEvent.WindowStateChange:
+            # Track maximize transitions robustly
+            now_maximized = bool(self.windowState() & Qt.WindowMaximized)
+            if now_maximized:
+                # Record that we are now maximized; do not update normal_geometry_rect while maximized
+                self.was_maximized = True
+            else:
+                # If we were maximized and now are not, we need to force the normal geometry
+                if self.was_maximized:
+                    # First ensure we are in normal state
+                    try:
+                        self.showNormal()
+                    except Exception:
+                        pass
+
+                    # Use a small delay to allow Qt to finish internal state changes
+                    QTimer.singleShot(50, self._apply_saved_normal_geometry_and_scale)
+
+                self.was_maximized = False
+
+            # Track fullscreen separately
             if self.windowState() & Qt.WindowFullScreen:
                 self.is_fullscreen = True
             else:
                 if self.is_fullscreen:
-                    self.restoreGeometry(self.normal_geometry_data)
+                    # If leaving fullscreen, restore the saved geometry
+                    try:
+                        self.restoreGeometry(self.normal_geometry_data)
+                    except Exception:
+                        pass
                     self.is_fullscreen = False
+
         super().changeEvent(event)
+
+    def _apply_saved_normal_geometry_and_scale(self):
+        """
+        Apply the stored normal_geometry_rect if it looks valid. If it appears to be
+        nearly the size of the screen (i.e. corrupted / actually maximized), fall back
+        to a sensible default size and center it.
+        """
+        try:
+            screen = self.screen()
+            if screen:
+                scr_geom = screen.availableGeometry()
+            else:
+                scr_geom = None
+        except Exception:
+            scr_geom = None
+
+        use_rect = None
+        if isinstance(self.normal_geometry_rect, QRect) and not self.normal_geometry_rect.isNull():
+            # If we have a screen, reject rects that appear to be maximized (very large)
+            if scr_geom:
+                # Treat rects that are >= 90% of screen height or width as invalid
+                if (self.normal_geometry_rect.width() >= scr_geom.width() * 0.9 or
+                        self.normal_geometry_rect.height() >= scr_geom.height() * 0.9):
+                    use_rect = None
+                else:
+                    use_rect = self.normal_geometry_rect
+            else:
+                use_rect = self.normal_geometry_rect
+
+        if use_rect is None:
+            # fallback geometry: 800x600 centered in screen if possible, otherwise just 800x600
+            fallback_w, fallback_h = 800, 600
+            if scr_geom:
+                cx = scr_geom.x() + (scr_geom.width() - fallback_w) // 2
+                cy = scr_geom.y() + (scr_geom.height() - fallback_h) // 2
+                use_rect = QRect(cx, cy, fallback_w, fallback_h)
+            else:
+                use_rect = QRect(100, 100, fallback_w, fallback_h)
+
+        # Apply geometry and then scale emblems after a tiny delay so layouts settle
+        try:
+            self.setGeometry(use_rect)
+        except Exception:
+            try:
+                self.restoreGeometry(self.normal_geometry_data)
+            except Exception:
+                pass
+
+        QTimer.singleShot(0, self.scale_emblems)
 
     # -------------------------
     # Resize event (for fonts)
     # -------------------------
     def resizeEvent(self, event):
-        if not self.isFullScreen() and isinstance(event, QEvent):
-            self.normal_geometry_data = self.saveGeometry()
+        # Update saved normal geometry only when NOT maximized/fullscreen
+        if not (self.windowState() & Qt.WindowMaximized) and not (self.windowState() & Qt.WindowFullScreen):
+            try:
+                self.normal_geometry_rect = self.geometry()
+                self.normal_geometry_data = self.saveGeometry()
+            except Exception:
+                pass
+
         self.scale_fonts()
+        QTimer.singleShot(0, self.scale_emblems)  # Defer emblem scaling
         super().resizeEvent(event)
 
     # -------------------------
@@ -250,7 +339,7 @@ class MainWindow(QWidget):
     def eventFilter(self, obj, event):
         if event.type() == QEvent.Resize:
             if obj == self.solo_emblem or obj == self.flex_emblem:
-                self.scale_emblems()
+                QTimer.singleShot(0, self.scale_emblems)  # defer scaling
         return super().eventFilter(obj, event)
 
     # -------------------------
@@ -271,19 +360,22 @@ class MainWindow(QWidget):
     # -------------------------
     def scale_emblems(self):
         if self.solo_original_pixmap:
-            scaled = self.solo_original_pixmap.scaled(
-                self.solo_emblem.width(),
-                self.solo_emblem.height(),
-                Qt.KeepAspectRatio,
-                Qt.SmoothTransformation
-            )
-            self.solo_emblem.setPixmap(scaled)
+            lw, lh = self.solo_emblem.width(), self.solo_emblem.height()
+            # avoid scaling when label hasn't got a proper size yet
+            if lw > 1 and lh > 1:
+                scaled = self.solo_original_pixmap.scaled(
+                    QSize(lw, lh),
+                    Qt.KeepAspectRatio,
+                    Qt.SmoothTransformation
+                )
+                self.solo_emblem.setPixmap(scaled)
 
         if self.flex_original_pixmap:
-            scaled = self.flex_original_pixmap.scaled(
-                self.flex_emblem.width(),
-                self.flex_emblem.height(),
-                Qt.KeepAspectRatio,
-                Qt.SmoothTransformation
-            )
-            self.flex_emblem.setPixmap(scaled)
+            lw, lh = self.flex_emblem.width(), self.flex_emblem.height()
+            if lw > 1 and lh > 1:
+                scaled = self.flex_original_pixmap.scaled(
+                    QSize(lw, lh),
+                    Qt.KeepAspectRatio,
+                    Qt.SmoothTransformation
+                )
+                self.flex_emblem.setPixmap(scaled)
