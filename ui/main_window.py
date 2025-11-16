@@ -194,23 +194,82 @@ class MainWindow(QWidget):
         self.picks_layout = QHBoxLayout(self.picks_container)
 
         # Blue picks
-        self.my_team_labels = [QLabel() for _ in range(5)]
+        # BLUE TEAM PICK STRUCTURE (Champion + Spells)
+        self.my_team_champ_labels = []
+        self.my_team_spell1_labels = []
+        self.my_team_spell2_labels = []
+
         self.blue_team_layout = QVBoxLayout()
-        for lbl in self.my_team_labels:
-            lbl.setFixedSize(64, 64)
-            lbl.setStyleSheet("border:2px solid gray; background-color: #ddeeff;")
-            self.blue_team_layout.addWidget(lbl)
+
+        for _ in range(5):
+            slot = QVBoxLayout()
+            slot.setSpacing(2)
+
+            # Champion icon
+            champ_lbl = QLabel()
+            champ_lbl.setFixedSize(64, 64)
+            champ_lbl.setStyleSheet("border:2px solid gray; background-color: #ddeeff;")
+            self.my_team_champ_labels.append(champ_lbl)
+
+            # Spell row
+            spell_row = QHBoxLayout()
+            spell1 = QLabel()
+            spell2 = QLabel()
+
+            for sp in (spell1, spell2):
+                sp.setFixedSize(22, 22)
+                sp.setStyleSheet("border:1px solid black; background-color: #eeeeee;")
+
+            self.my_team_spell1_labels.append(spell1)
+            self.my_team_spell2_labels.append(spell2)
+
+            spell_row.addWidget(spell1)
+            spell_row.addWidget(spell2)
+
+            slot.addWidget(champ_lbl)
+            slot.addLayout(spell_row)
+
+            self.blue_team_layout.addLayout(slot)
+
         self.picks_layout.addLayout(self.blue_team_layout)
 
         self.picks_layout.addStretch()
 
         # Red picks
-        self.enemy_team_labels = [QLabel() for _ in range(5)]
+        self.enemy_team_champ_labels = []
+        self.enemy_team_spell1_labels = []
+        self.enemy_team_spell2_labels = []
+
         self.red_team_layout = QVBoxLayout()
-        for lbl in self.enemy_team_labels:
-            lbl.setFixedSize(64, 64)
-            lbl.setStyleSheet("border:2px solid gray; background-color: #ffdddd;")
-            self.red_team_layout.addWidget(lbl)
+
+        for _ in range(5):
+            slot = QVBoxLayout()
+            slot.setSpacing(2)
+
+            champ_lbl = QLabel()
+            champ_lbl.setFixedSize(64, 64)
+            champ_lbl.setStyleSheet("border:2px solid gray; background-color: #ffdddd;")
+            self.enemy_team_champ_labels.append(champ_lbl)
+
+            spell_row = QHBoxLayout()
+            spell1 = QLabel()
+            spell2 = QLabel()
+
+            for sp in (spell1, spell2):
+                sp.setFixedSize(22, 22)
+                sp.setStyleSheet("border:1px solid black; background-color: #eeeeee;")
+
+            self.enemy_team_spell1_labels.append(spell1)
+            self.enemy_team_spell2_labels.append(spell2)
+
+            spell_row.addWidget(spell1)
+            spell_row.addWidget(spell2)
+
+            slot.addWidget(champ_lbl)
+            slot.addLayout(spell_row)
+
+            self.red_team_layout.addLayout(slot)
+
         self.picks_layout.addLayout(self.red_team_layout)
 
         # Store original QPixmaps for champion picks and bans
@@ -348,8 +407,18 @@ class MainWindow(QWidget):
         status, data = client.get_champ_select()
 
         # Reset all boxes first
-        for lbl in self.my_team_labels + self.enemy_team_labels + self.my_ban_labels + self.enemy_ban_labels:
+        for lbl in (
+            self.my_team_champ_labels +
+            self.enemy_team_champ_labels +
+            self.my_ban_labels +
+            self.enemy_ban_labels +
+            self.my_team_spell1_labels +
+            self.my_team_spell2_labels +
+            self.enemy_team_spell1_labels +
+            self.enemy_team_spell2_labels
+        ):
             lbl.clear()
+
 
         if status != 200 or not data:
             # No champ select
@@ -360,8 +429,19 @@ class MainWindow(QWidget):
 
             # NEW: fully reset pick/ban icons + styles
             self.reset_champ_select_styles()
-            for lbl in self.my_team_labels + self.enemy_team_labels + self.my_ban_labels + self.enemy_ban_labels:
+
+            for lbl in (
+                self.my_team_champ_labels +
+                self.enemy_team_champ_labels +
+                self.my_ban_labels +
+                self.enemy_ban_labels +
+                self.my_team_spell1_labels +
+                self.my_team_spell2_labels +
+                self.enemy_team_spell1_labels +
+                self.enemy_team_spell2_labels
+            ):
                 lbl.clear()
+
 
             return
 
@@ -388,11 +468,35 @@ class MainWindow(QWidget):
                 continue
             icon_path = self.champ_data.get_champion_icon(champ.get("championId"))
             if icon_path:
-                pix = QPixmap(icon_path)  # store original
-                lbl = self.blue_team_layout.itemAt(i).widget()
+                pix = QPixmap(icon_path)
+                lbl = self.my_team_champ_labels[i]   # FIXED
                 self.pick_original_pixmaps[lbl] = pix
                 self.scale_pixmap_to_label(lbl)
                 lbl.setStyleSheet("border:2px solid #0000ff; background-color: #ddeeff;")
+
+
+        
+        # BLUE TEAM SPELLS
+        for i, champ in enumerate(blue_team):
+            if i >= 5:
+                continue
+
+            spell1 = champ.get("spell1Id")
+            spell2 = champ.get("spell2Id")
+
+            sp1_path = self.champ_data.get_spell_icon(spell1)
+            sp2_path = self.champ_data.get_spell_icon(spell2)
+
+            if sp1_path:
+                self.my_team_spell1_labels[i].setPixmap(QPixmap(sp1_path).scaled(
+                    self.my_team_spell1_labels[i].size(), Qt.KeepAspectRatio, Qt.SmoothTransformation
+                ))
+
+            if sp2_path:
+                self.my_team_spell2_labels[i].setPixmap(QPixmap(sp2_path).scaled(
+                    self.my_team_spell2_labels[i].size(), Qt.KeepAspectRatio, Qt.SmoothTransformation
+                ))
+
 
         # Red team picks
         for i, champ in enumerate(red_team):
@@ -400,11 +504,34 @@ class MainWindow(QWidget):
                 continue
             icon_path = self.champ_data.get_champion_icon(champ.get("championId"))
             if icon_path:
-                pix = QPixmap(icon_path)  # store original
-                lbl = self.red_team_layout.itemAt(i).widget()
+                pix = QPixmap(icon_path)
+                lbl = self.enemy_team_champ_labels[i]  # FIXED
                 self.pick_original_pixmaps[lbl] = pix
                 self.scale_pixmap_to_label(lbl)
                 lbl.setStyleSheet("border:2px solid #ff0000; background-color: #ffdddd;")
+
+        
+        # RED TEAM SPELLS
+        for i, champ in enumerate(red_team):
+            if i >= 5:
+                continue
+
+            spell1 = champ.get("spell1Id")
+            spell2 = champ.get("spell2Id")
+
+            sp1_path = self.champ_data.get_spell_icon(spell1)
+            sp2_path = self.champ_data.get_spell_icon(spell2)
+
+            if sp1_path:
+                self.enemy_team_spell1_labels[i].setPixmap(QPixmap(sp1_path).scaled(
+                    self.enemy_team_spell1_labels[i].size(), Qt.KeepAspectRatio, Qt.SmoothTransformation
+                ))
+
+            if sp2_path:
+                self.enemy_team_spell2_labels[i].setPixmap(QPixmap(sp2_path).scaled(
+                    self.enemy_team_spell2_labels[i].size(), Qt.KeepAspectRatio, Qt.SmoothTransformation
+                ))
+
 
 
         # Update bans properly
@@ -601,8 +728,9 @@ class MainWindow(QWidget):
         self.red_team_layout.setSpacing(spacing)
 
         # Apply pick sizes
-        for lbl in self.my_team_labels + self.enemy_team_labels:
+        for lbl in self.my_team_champ_labels + self.enemy_team_champ_labels:
             lbl.setFixedSize(pick_size)
+
             self.scale_pixmap_to_label(lbl)
 
         # Ban size ~ 75% of pick size
@@ -614,6 +742,19 @@ class MainWindow(QWidget):
         # Set top/bottom margins for picks and bans
         self.picks_layout.setContentsMargins(0, spacing, 0, spacing)
         self.bans_layout.setContentsMargins(10, spacing, 10, spacing)
+
+        # Spell size: ~30% of pick box
+        spell_size = QSize(
+            int(pick_size.width() * 0.30),
+            int(pick_size.height() * 0.30)
+        )
+
+        for lbl in self.my_team_spell1_labels + self.my_team_spell2_labels + \
+                self.enemy_team_spell1_labels + self.enemy_team_spell2_labels:
+            lbl.setFixedSize(spell_size)
+            self.scale_pixmap_to_label(lbl)
+
+
 
 
 
@@ -648,10 +789,10 @@ class MainWindow(QWidget):
         default_ban_red  = "border:2px solid gray; background-color: #ffdddd;"
 
         # Reset picks
-        for lbl in self.my_team_labels:
+        for lbl in self.my_team_champ_labels:
             lbl.setStyleSheet(default_pick_blue)
 
-        for lbl in self.enemy_team_labels:
+        for lbl in self.enemy_team_champ_labels:
             lbl.setStyleSheet(default_pick_red)
 
         # Reset bans

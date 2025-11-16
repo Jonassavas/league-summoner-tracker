@@ -32,3 +32,5 @@ env/
 
 # Don't include downloaded champion assets
 /assets/champions/
+/assets/spells/
+assets/ranked_emblems/
