@@ -4,6 +4,13 @@ import json
 import base64
 import requests
 import re
+import requests
+import urllib3
+from urllib3.exceptions import InsecureRequestWarning
+
+# Disable warnings for insecure HTTPS requests
+urllib3.disable_warnings(InsecureRequestWarning)
+
 
 class LeagueClient:
     def __init__(self):
