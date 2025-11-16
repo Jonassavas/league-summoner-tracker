@@ -335,9 +335,12 @@ class MainWindow(QWidget):
         self.stack.setCurrentIndex(1)
         self.champ_timer.start()
         self.update_champ_select()
+        QTimer.singleShot(0, self.update_box_sizes)
+
 
     def go_back(self):
         self.champ_timer.stop()
+        self.reset_champ_select_styles()
         self.stack.setCurrentIndex(0)
 
     def update_champ_select(self):
@@ -354,12 +357,20 @@ class MainWindow(QWidget):
             self.champ_select_label.show()
             self.bans_container.hide()
             self.picks_container.hide()
+
+            # NEW: fully reset pick/ban icons + styles
+            self.reset_champ_select_styles()
+            for lbl in self.my_team_labels + self.enemy_team_labels + self.my_ban_labels + self.enemy_ban_labels:
+                lbl.clear()
+
             return
+
 
         # Champ select active
         self.champ_select_label.hide()
         self.bans_container.show()
         self.picks_container.show()
+        QTimer.singleShot(0, self.update_box_sizes)
 
 
         # Determine blue/red side
@@ -629,3 +640,27 @@ class MainWindow(QWidget):
             lbl.setPixmap(scaled)
 
 
+    def reset_champ_select_styles(self):
+        default_pick_blue = "border:2px solid gray; background-color: #ddeeff;"
+        default_pick_red  = "border:2px solid gray; background-color: #ffdddd;"
+
+        default_ban_blue = "border:2px solid gray; background-color: #ddeeff;"
+        default_ban_red  = "border:2px solid gray; background-color: #ffdddd;"
+
+        # Reset picks
+        for lbl in self.my_team_labels:
+            lbl.setStyleSheet(default_pick_blue)
+
+        for lbl in self.enemy_team_labels:
+            lbl.setStyleSheet(default_pick_red)
+
+        # Reset bans
+        for lbl in self.my_ban_labels:
+            lbl.setStyleSheet(default_ban_blue)
+
+        for lbl in self.enemy_ban_labels:
+            lbl.setStyleSheet(default_ban_red)
+
+        # Clear pixmap caches
+        self.pick_original_pixmaps.clear()
+        self.ban_original_pixmaps.clear()
