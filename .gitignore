@@ -33,4 +33,7 @@ env/
 # Don't include downloaded champion assets
 /assets/champions/
 /assets/spells/
-assets/ranked_emblems/
+/assets/ranked_emblems/
+/assets/summoner.json
+/assets/champion.json
+/assets/cached_patch.json

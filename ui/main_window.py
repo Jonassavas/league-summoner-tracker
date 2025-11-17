@@ -202,8 +202,8 @@ class MainWindow(QWidget):
         self.blue_team_layout = QVBoxLayout()
 
         for _ in range(5):
-            slot = QVBoxLayout()
-            slot.setSpacing(2)
+            row = QHBoxLayout()
+            row.setSpacing(4)
 
             # Champion icon
             champ_lbl = QLabel()
@@ -211,25 +211,32 @@ class MainWindow(QWidget):
             champ_lbl.setStyleSheet("border:2px solid gray; background-color: #ddeeff;")
             self.my_team_champ_labels.append(champ_lbl)
 
-            # Spell row
-            spell_row = QHBoxLayout()
+            # Spells stacked vertically
+            spell_col = QVBoxLayout()
+            spell_col.setSpacing(2)
+
             spell1 = QLabel()
             spell2 = QLabel()
-
             for sp in (spell1, spell2):
                 sp.setFixedSize(22, 22)
-                sp.setStyleSheet("border:1px solid black; background-color: #eeeeee;")
+                #sp.setStyleSheet("border:1px solid black; background-color: #eeeeee;")
+                # Set empty transparent pixmap to reserve space
+                empty_pix = QPixmap(sp.size())
+                empty_pix.fill(Qt.transparent)
+                sp.setPixmap(empty_pix)
+                sp.show()  # always show so layout doesn't collapse
 
             self.my_team_spell1_labels.append(spell1)
             self.my_team_spell2_labels.append(spell2)
 
-            spell_row.addWidget(spell1)
-            spell_row.addWidget(spell2)
+            spell_col.addWidget(spell1)
+            spell_col.addWidget(spell2)
 
-            slot.addWidget(champ_lbl)
-            slot.addLayout(spell_row)
+            row.addWidget(champ_lbl)
+            row.addLayout(spell_col)   # spells on the RIGHT side of pick
+            
+            self.blue_team_layout.addLayout(row)
 
-            self.blue_team_layout.addLayout(slot)
 
         self.picks_layout.addLayout(self.blue_team_layout)
 
@@ -243,32 +250,41 @@ class MainWindow(QWidget):
         self.red_team_layout = QVBoxLayout()
 
         for _ in range(5):
-            slot = QVBoxLayout()
-            slot.setSpacing(2)
+            row = QHBoxLayout()
+            row.setSpacing(4)
 
+            # Spells first (on LEFT)
+            spell_col = QVBoxLayout()
+            spell_col.setSpacing(2)
+
+            spell1 = QLabel()
+            spell2 = QLabel()
+            for sp in (spell1, spell2):
+                sp.setFixedSize(22, 22)
+                #sp.setStyleSheet("border:1px solid black; background-color: #eeeeee;")
+                # Set empty transparent pixmap to reserve space
+                empty_pix = QPixmap(sp.size())
+                empty_pix.fill(Qt.transparent)
+                sp.setPixmap(empty_pix)
+                sp.show()  # always show so layout doesn't collapse
+
+            self.enemy_team_spell1_labels.append(spell1)
+            self.enemy_team_spell2_labels.append(spell2)
+
+            spell_col.addWidget(spell1)
+            spell_col.addWidget(spell2)
+
+            # Champion icon
             champ_lbl = QLabel()
             champ_lbl.setFixedSize(64, 64)
             champ_lbl.setStyleSheet("border:2px solid gray; background-color: #ffdddd;")
             self.enemy_team_champ_labels.append(champ_lbl)
 
-            spell_row = QHBoxLayout()
-            spell1 = QLabel()
-            spell2 = QLabel()
+            row.addLayout(spell_col)
+            row.addWidget(champ_lbl)
 
-            for sp in (spell1, spell2):
-                sp.setFixedSize(22, 22)
-                sp.setStyleSheet("border:1px solid black; background-color: #eeeeee;")
+            self.red_team_layout.addLayout(row)
 
-            self.enemy_team_spell1_labels.append(spell1)
-            self.enemy_team_spell2_labels.append(spell2)
-
-            spell_row.addWidget(spell1)
-            spell_row.addWidget(spell2)
-
-            slot.addWidget(champ_lbl)
-            slot.addLayout(spell_row)
-
-            self.red_team_layout.addLayout(slot)
 
         self.picks_layout.addLayout(self.red_team_layout)
 
@@ -484,18 +500,9 @@ class MainWindow(QWidget):
             spell1 = champ.get("spell1Id")
             spell2 = champ.get("spell2Id")
 
-            sp1_path = self.champ_data.get_spell_icon(spell1)
-            sp2_path = self.champ_data.get_spell_icon(spell2)
+            self.update_spell_label(self.my_team_spell1_labels[i], spell1)
+            self.update_spell_label(self.my_team_spell2_labels[i], spell2)
 
-            if sp1_path:
-                self.my_team_spell1_labels[i].setPixmap(QPixmap(sp1_path).scaled(
-                    self.my_team_spell1_labels[i].size(), Qt.KeepAspectRatio, Qt.SmoothTransformation
-                ))
-
-            if sp2_path:
-                self.my_team_spell2_labels[i].setPixmap(QPixmap(sp2_path).scaled(
-                    self.my_team_spell2_labels[i].size(), Qt.KeepAspectRatio, Qt.SmoothTransformation
-                ))
 
 
         # Red team picks
@@ -519,18 +526,9 @@ class MainWindow(QWidget):
             spell1 = champ.get("spell1Id")
             spell2 = champ.get("spell2Id")
 
-            sp1_path = self.champ_data.get_spell_icon(spell1)
-            sp2_path = self.champ_data.get_spell_icon(spell2)
+            self.update_spell_label(self.enemy_team_spell1_labels[i], spell1)
+            self.update_spell_label(self.enemy_team_spell2_labels[i], spell2)
 
-            if sp1_path:
-                self.enemy_team_spell1_labels[i].setPixmap(QPixmap(sp1_path).scaled(
-                    self.enemy_team_spell1_labels[i].size(), Qt.KeepAspectRatio, Qt.SmoothTransformation
-                ))
-
-            if sp2_path:
-                self.enemy_team_spell2_labels[i].setPixmap(QPixmap(sp2_path).scaled(
-                    self.enemy_team_spell2_labels[i].size(), Qt.KeepAspectRatio, Qt.SmoothTransformation
-                ))
 
 
 
@@ -561,6 +559,34 @@ class MainWindow(QWidget):
                     self.scale_pixmap_to_label(lbl)
                     lbl.setStyleSheet("border:2px solid #ff0000; background-color: #ffdddd;")
                     red_ban_index -= 1
+
+    def update_spell_label(self, label, spell_id):
+        """Show/hide a spell icon without collapsing the layout."""
+        if not spell_id or spell_id == 0:
+            # Use a transparent pixmap to keep layout space
+            empty_pix = QPixmap(label.size())
+            empty_pix.fill(Qt.transparent)
+            label.setPixmap(empty_pix)
+            label.show()
+            return
+
+        icon_path = self.champ_data.get_spell_icon(spell_id)
+        if not icon_path:
+            # If icon not found, also fill with transparent
+            empty_pix = QPixmap(label.size())
+            empty_pix.fill(Qt.transparent)
+            label.setPixmap(empty_pix)
+            label.show()
+            return
+
+        pix = QPixmap(icon_path).scaled(
+            label.size(),
+            Qt.KeepAspectRatio,
+            Qt.SmoothTransformation
+        )
+        label.setPixmap(pix)
+        label.show()
+
 
 
 
@@ -745,9 +771,10 @@ class MainWindow(QWidget):
 
         # Spell size: ~30% of pick box
         spell_size = QSize(
-            int(pick_size.width() * 0.30),
-            int(pick_size.height() * 0.30)
+            int(pick_size.height() * 0.40),
+            int(pick_size.height() * 0.40)
         )
+
 
         for lbl in self.my_team_spell1_labels + self.my_team_spell2_labels + \
                 self.enemy_team_spell1_labels + self.enemy_team_spell2_labels:
